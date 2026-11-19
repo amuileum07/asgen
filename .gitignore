@@ -1,0 +1,34 @@
+# Python / uv / Ruff
+.venv/
+.uv-cache/
+.uv-tools/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Blender backups & temporary files
+*.blend1
+*.blend2
+*.blend@
+
+# Generated 3D assets, previews, and exports
+assets/generated/
+generated/
+output/
+
+# Local toolchains & compiled native binaries
+.tooling/
+*.exe
+*.dll
+*.so
+*.dylib
+*.obj
+*.o
+*.log
+walk.save.tsv
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini

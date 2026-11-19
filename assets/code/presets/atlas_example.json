@@ -1,0 +1,276 @@
+{
+  "blueprint_version": 2,
+  "title": "Sample Custom Atlas",
+  "seed": 101,
+  "size_m": [4096, 4096],
+  "terrain": {
+    "base_elevation_m": 28,
+    "north_slope_m": 32,
+    "grain_m": 14,
+    "ledge_m": 4,
+    "coast": {
+      "side": "WEST",
+      "position_uv": 0.12,
+      "transition_m": 520,
+      "shelf_slope": 0.09,
+      "max_depth_m": 45,
+      "waves": [
+        [0.02, 12.0],
+        [0.008, 28.0]
+      ],
+      "bays": [
+        {
+          "centre": 0.30,
+          "width": 0.14,
+          "depth_uv": 0.025
+        }
+      ]
+    },
+    "ridges": [
+      {
+        "axis_uv": [
+          [0.74, 0.18],
+          [0.78, 0.55],
+          [0.82, 0.88]
+        ],
+        "width_uv": 0.12,
+        "height_m": 180,
+        "north_height_m": 260,
+        "north_ramp_v": [0.45, 0.90],
+        "grain_m": 42,
+        "ledge_m": 14
+      }
+    ],
+    "basins": [
+      {
+        "centre_uv": [0.34, 0.72],
+        "radii_uv": [0.11, 0.10],
+        "mode": "LOWER",
+        "drop_m": 14,
+        "ledge_drop_m": 4
+      }
+    ]
+  },
+  "climate": {
+    "temp_offset_c": 1.5,
+    "lapse_base_m": 120,
+    "lapse_rate": 0.0058,
+    "rain_shadow": {
+      "start_u": 0.50,
+      "end_u": 0.90,
+      "drop": 0.30
+    }
+  },
+  "regions": [
+    {
+      "id": "west_shore",
+      "biome": "COAST",
+      "centre_uv": [0.22, 0.32],
+      "radii_m": [1100, 1300],
+      "heading_deg": 0,
+      "blend_m": 320
+    },
+    {
+      "id": "north_forest",
+      "biome": "FOREST",
+      "centre_uv": [0.36, 0.74],
+      "radii_m": [1300, 1100],
+      "heading_deg": 0,
+      "blend_m": 360
+    },
+    {
+      "id": "heartland_plain",
+      "biome": "PLAIN",
+      "centre_uv": [0.50, 0.45],
+      "radii_m": [1400, 1200],
+      "heading_deg": 0,
+      "blend_m": 380
+    },
+    {
+      "id": "east_highlands",
+      "biome": "MOUNTAIN",
+      "centre_uv": [0.80, 0.62],
+      "radii_m": [1100, 1500],
+      "heading_deg": 0,
+      "blend_m": 360
+    }
+  ],
+  "features": [
+    {
+      "id": "west_sea",
+      "kind": "SEA",
+      "level_m": 0,
+      "depth_m": 45
+    },
+    {
+      "id": "main_river",
+      "kind": "RIVER",
+      "width_m": 44,
+      "depth_m": 7,
+      "axis_uv": [
+        [0.64, 0.68],
+        [0.54, 0.56],
+        [0.42, 0.40],
+        [0.24, 0.32],
+        [0.08, 0.30]
+      ],
+      "levels_m": [62, 42, 24, 9, 0],
+      "outlet_id": "west_sea"
+    },
+    {
+      "id": "high_lake",
+      "kind": "GLACIAL_TROUGH",
+      "width_m": 240,
+      "axis_uv": [
+        [0.58, 0.78],
+        [0.62, 0.73],
+        [0.65, 0.68]
+      ],
+      "level_m": 62,
+      "depth_m": 22,
+      "outlet_id": "main_river"
+    },
+    {
+      "id": "mist_hollow",
+      "kind": "FOG_BASIN",
+      "centre_uv": [0.34, 0.72],
+      "radii_m": [580, 480],
+      "dungeon_count": 1
+    }
+  ],
+  "themes": [
+    {
+      "id": "valley_route",
+      "name": "Valley Tradeway",
+      "weather": "SUN_SHOWER",
+      "trade": "CARTOGRAPHER",
+      "spine_uv": [
+        [0.24, 0.36],
+        [0.50, 0.46],
+        [0.74, 0.58]
+      ],
+      "blend_m": 420
+    },
+    {
+      "id": "woodland_trail",
+      "name": "Northern Woods",
+      "weather": "DRIZZLE",
+      "trade": "HERBALIST",
+      "spine_uv": [
+        [0.32, 0.76],
+        [0.48, 0.72],
+        [0.60, 0.70]
+      ],
+      "blend_m": 420
+    }
+  ],
+  "realms": [
+    {
+      "id": "lowland_realm",
+      "name": "Lowland",
+      "biome": "PLAIN",
+      "centre_uv": [0.48, 0.44],
+      "target_land_fraction": 0.62,
+      "seat_id": "central_capital",
+      "theme": "valley_route"
+    },
+    {
+      "id": "highland_realm",
+      "name": "Highland",
+      "biome": "MOUNTAIN",
+      "centre_uv": [0.76, 0.60],
+      "target_land_fraction": 0.38,
+      "seat_id": "ridge_city",
+      "theme": "woodland_trail"
+    }
+  ],
+  "sites": [
+    {
+      "id": "central_capital",
+      "name": "Central Capital",
+      "realm_id": "lowland_realm",
+      "rank": "CAPITAL",
+      "near_uv": [0.52, 0.35],
+      "search_radius_m": 320,
+      "extent_m": [620, 480],
+      "plaza_m": [68, 46],
+      "concepts": ["ROYAL_PLAZA", "RIVERSIDE", "CATHEDRAL"],
+      "castle_role": "ROYAL_SEAT",
+      "biome": "PLAIN",
+      "grand_capital": true
+    },
+    {
+      "id": "west_harbor",
+      "name": "West Harbor",
+      "realm_id": "lowland_realm",
+      "rank": "CITY",
+      "near_uv": [0.24, 0.24],
+      "search_radius_m": 280,
+      "extent_m": [310, 244],
+      "plaza_m": [42, 30],
+      "concepts": ["HARBOR", "CHAPEL"],
+      "castle_role": "RESIDENCE",
+      "biome": "COAST"
+    },
+    {
+      "id": "forest_village",
+      "name": "Forest Village",
+      "realm_id": "lowland_realm",
+      "rank": "VILLAGE",
+      "near_uv": [0.44, 0.78],
+      "search_radius_m": 240,
+      "extent_m": [147, 120],
+      "plaza_m": [17, 14],
+      "concepts": ["SAWMILL"],
+      "biome": "FOREST"
+    },
+    {
+      "id": "ridge_city",
+      "name": "Ridge Hold",
+      "realm_id": "highland_realm",
+      "rank": "CAPITAL",
+      "near_uv": [0.74, 0.56],
+      "search_radius_m": 320,
+      "extent_m": [460, 380],
+      "plaza_m": [54, 38],
+      "concepts": ["PASS", "TRAINING_YARD"],
+      "castle_role": "FORTRESS",
+      "biome": "MOUNTAIN"
+    },
+    {
+      "id": "lake_outpost",
+      "name": "Lake Outpost",
+      "realm_id": "highland_realm",
+      "rank": "VILLAGE",
+      "near_uv": [0.76, 0.80],
+      "search_radius_m": 240,
+      "extent_m": [147, 120],
+      "plaza_m": [17, 14],
+      "concepts": ["MAGE_TOWER"],
+      "biome": "MOUNTAIN"
+    }
+  ],
+  "dungeons": [
+    {
+      "id": "hollow_crypt",
+      "kind": "CATACOMB",
+      "fog_basin_id": "mist_hollow",
+      "offset_fraction": [-0.2, 0.15],
+      "theme": "woodland_trail"
+    },
+    {
+      "id": "east_vault",
+      "kind": "VAULT",
+      "near_uv": [0.76, 0.30],
+      "theme": "valley_route"
+    }
+  ],
+  "seasonal_links": [
+    {
+      "from": "forest_village",
+      "to": "lake_outpost",
+      "condition": "FERRY",
+      "feature": "high_lake"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "scale": "CITY",
+  "seed": 42,
+  "terrain_seed": 84,
+  "radius": 100,
+  "density": 0.95,
+  "max_buildings": 110,
+  "relief": 9,
+  "walls": "AUTO",
+  "castle": "AUTO",
+  "detail": "LOW"
+}

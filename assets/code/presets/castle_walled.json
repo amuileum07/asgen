@@ -1,0 +1,14 @@
+{
+  "scale": "CITY",
+  "seed": 58,
+  "terrain_seed": 84,
+  "radius": 100,
+  "density": 0.75,
+  "max_buildings": 70,
+  "relief": 4,
+  "walls": "ON",
+  "castle": "ON",
+  "castle_site": "WALLED",
+  "terrain_step": 2,
+  "detail": "LOW"
+}

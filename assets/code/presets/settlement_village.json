@@ -1,0 +1,10 @@
+{
+  "scale": "VILLAGE",
+  "seed": 42,
+  "terrain_seed": 84,
+  "density": 0.9,
+  "relief": 7,
+  "walls": "AUTO",
+  "castle": "AUTO",
+  "detail": "LOW"
+}

@@ -1,0 +1,17 @@
+{
+  "architecture": "MEDIEVAL",
+  "seed": 42,
+  "detail_seed": 7,
+  "width": 7.8,
+  "depth": 6.4,
+  "floors": 2,
+  "wall_style": "PLASTER",
+  "roof_style": "GABLE",
+  "roof_pitch": 44,
+  "overhang": 0.65,
+  "palette": "WARM",
+  "interior": true,
+  "furnish": true,
+  "interior_seed": 17,
+  "walkway_width": 0.8
+}

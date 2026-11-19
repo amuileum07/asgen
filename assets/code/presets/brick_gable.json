@@ -1,0 +1,8 @@
+{
+  "seed": 42,
+  "detail_seed": 7,
+  "wall_style": "BRICK",
+  "roof_style": "GABLE",
+  "palette": "WARM",
+  "floors": 2
+}

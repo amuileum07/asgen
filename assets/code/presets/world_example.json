@@ -1,0 +1,147 @@
+{
+  "seed": 42,
+  "size": [1600, 1224],
+  "terrain_step": 8,
+  "base_elevation": 22,
+  "relief": 13,
+  "snowline": 178,
+  "grass_density": 1.0,
+  "coast": {
+    "side": "WEST",
+    "position": -563,
+    "waviness": 58,
+    "depth": 25
+  },
+  "regions": [
+    {
+      "kind": "MOUNTAIN",
+      "centre": [262, 370],
+      "radii": [395, 305],
+      "heading": 16,
+      "max_elevation": 224
+    },
+    {
+      "kind": "MOUNTAIN",
+      "centre": [538, 452],
+      "radii": [272, 228],
+      "heading": -20,
+      "max_elevation": 199
+    },
+    {
+      "kind": "VALLEY",
+      "centre": [-25, -159],
+      "radii": [570, 172],
+      "heading": 12,
+      "elevation": 9,
+      "max_elevation": 33
+    },
+    {
+      "kind": "HILLS",
+      "centre": [-172, -465],
+      "radii": [270, 180],
+      "heading": 17,
+      "elevation": 72
+    },
+    {
+      "kind": "HILLS",
+      "centre": [618, -337],
+      "radii": [220, 208],
+      "elevation": 92
+    },
+    {
+      "kind": "PLAIN",
+      "centre": [234, -402],
+      "radii": [174, 133],
+      "elevation": 17,
+      "max_elevation": 26
+    }
+  ],
+  "lakes": [
+    {
+      "id": "south_lake",
+      "centre": [443, -398],
+      "radii": [151, 105],
+      "level": 15,
+      "depth": 14
+    }
+  ],
+  "rivers": [
+    {
+      "id": "central_river",
+      "width": 27,
+      "depth": 4,
+      "points": [
+        [801, 82, 23],
+        [634, 21, 19],
+        [482, -34, 16],
+        [286, -62, 13],
+        [104, -108, 10],
+        [-78, -93, 8],
+        [-232, -128, 6],
+        [-390, -112, 3],
+        [-615, -154, 0]
+      ]
+    }
+  ],
+  "settlements": [
+    {
+      "id": "west_port",
+      "profile": "HARBOR",
+      "near": [-482, 206],
+      "search_radius": 105,
+      "settlement": {
+        "seed": 24,
+        "scale": "TOWN",
+        "radius": 58,
+        "max_buildings": 45,
+        "terrain_step": 2.6,
+        "grass_density": 1.0
+      }
+    },
+    {
+      "id": "high_ridge",
+      "profile": "MOUNTAIN",
+      "near": [219, 177],
+      "search_radius": 121,
+      "settlement": {
+        "seed": 51,
+        "scale": "TOWN",
+        "radius": 50,
+        "max_buildings": 32,
+        "walls": "OFF",
+        "terrain_step": 2.6,
+        "grass_density": 1.0
+      }
+    },
+    {
+      "id": "lake_hamlet",
+      "profile": "LAKESIDE",
+      "near": [232, -404],
+      "search_radius": 80,
+      "settlement": {
+        "seed": 48,
+        "scale": "TOWN",
+        "radius": 46,
+        "max_buildings": 23,
+        "walls": "OFF",
+        "terrain_step": 2.6,
+        "grass_density": 1.0
+      }
+    },
+    {
+      "id": "river_crossing",
+      "profile": "RIVERSIDE",
+      "near": [-24, -177],
+      "search_radius": 97,
+      "settlement": {
+        "seed": 56,
+        "scale": "TOWN",
+        "radius": 54,
+        "max_buildings": 35,
+        "walls": "OFF",
+        "terrain_step": 2.6,
+        "grass_density": 1.0
+      }
+    }
+  ]
+}

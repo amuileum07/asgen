@@ -1,0 +1,41 @@
+[project]
+name = "asgen"
+version = "0.1.0"
+description = "Dependency-free procedural 3D building, settlement, and world map generator for Blender"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+required-version = "==0.17.5"
+target-version = "py311"
+line-length = 79
+indent-width = 4
+src = ["assets/code"]
+extend-exclude = ["assets/generated"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "C4", "PIE", "RUF100"]
+
+[tool.ruff.lint.per-file-ignores]
+# Blender uses RNA class names such as CH_OT_generate and CH_PT_panel.
+"assets/code/house_generator.py" = ["N801"]
+"assets/code/settlement_generator.py" = ["N801"]
+"assets/code/world_generator.py" = ["N801"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = 72
+
+[dependency-groups]
+dev = [
+    "ruff==0.17.5",
+]

@@ -1,0 +1,14 @@
+{
+  "seed": 42,
+  "detail_seed": 7,
+  "width": 8.2,
+  "depth": 6.2,
+  "floors": 2,
+  "interior": true,
+  "furnish": true,
+  "interior_seed": 17,
+  "walkway_width": 0.8,
+  "wall_style": "PLASTER",
+  "roof_style": "GABLE",
+  "palette": "PASTEL"
+}
