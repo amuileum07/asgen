@@ -135,6 +135,119 @@ def paving_images(size=256):
     return tuple(images)
 
 
+def _architecture_surface(kind):
+    name = f"Asgen {kind.title()} Surface"
+    if group := bpy.data.node_groups.get(name):
+        return group
+    group = bpy.data.node_groups.new(name, "ShaderNodeTree")
+    for socket, direction, socket_type in (
+        ("Tint", "INPUT", "NodeSocketColor"),
+        ("Color", "OUTPUT", "NodeSocketColor"),
+        ("Normal", "OUTPUT", "NodeSocketVector"),
+    ):
+        group.interface.new_socket(
+            name=socket, in_out=direction, socket_type=socket_type
+        )
+
+    nodes, links = group.nodes, group.links
+    tint = nodes.new("NodeGroupInput")
+    tint.location = (20, 240)
+    output = nodes.new("NodeGroupOutput")
+    output.location = (620, 40)
+    coords = nodes.new("ShaderNodeTexCoord")
+    coords.location = (-850, 30)
+    vector = coords.outputs["Object"]
+    if kind == "timber":
+        grain = nodes.new("ShaderNodeVectorMath")
+        grain.operation = "MULTIPLY"
+        grain.inputs[1].default_value = (3.0, 42.0, 1.0)
+        grain.location = (-640, 40)
+        links.new(coords.outputs["UV"], grain.inputs[0])
+        vector = grain.outputs["Vector"]
+
+    scale, minimum, maximum, grain_scale, depth = {
+        "plaster": (1.8, 0.81, 1.08, 58.0, 0.003),
+        "timber": (1.0, 0.67, 1.16, 1.0, 0.004),
+        "clay": (3.5, 0.68, 1.14, 37.0, 0.004),
+        "stone": (2.2, 0.73, 1.12, 26.0, 0.006),
+    }[kind]
+    pattern = nodes.new("ShaderNodeTexNoise")
+    pattern.location = (-440, 40)
+    pattern.inputs["Scale"].default_value = scale
+    pattern.inputs["Detail"].default_value = 3.0
+    links.new(vector, pattern.inputs["Vector"])
+    variation = nodes.new("ShaderNodeMapRange")
+    variation.location = (-225, 40)
+    for socket, value in (
+        ("From Min", 0.25),
+        ("From Max", 0.75),
+        ("To Min", minimum),
+        ("To Max", maximum),
+    ):
+        variation.inputs[socket].default_value = value
+    links.new(pattern.outputs["Fac"], variation.inputs["Value"])
+    shade = variation.outputs["Result"]
+
+    if kind == "plaster":
+        height = nodes.new("ShaderNodeSeparateXYZ")
+        height.location = (-640, -330)
+        links.new(coords.outputs["Generated"], height.inputs["Vector"])
+        foot = nodes.new("ShaderNodeMapRange")
+        foot.location = (-440, -330)
+        foot.interpolation_type = "SMOOTHSTEP"
+        foot.inputs["From Max"].default_value = 0.23
+        foot.inputs["To Min"].default_value = 0.64
+        links.new(height.outputs["Z"], foot.inputs["Value"])
+        weathering = nodes.new("ShaderNodeMath")
+        weathering.operation = "MULTIPLY"
+        weathering.location = (20, 40)
+        links.new(shade, weathering.inputs[0])
+        links.new(foot.outputs["Result"], weathering.inputs[1])
+        shade = weathering.outputs[0]
+
+    color = nodes.new("ShaderNodeMixRGB")
+    color.blend_type = "MULTIPLY"
+    color.inputs[0].default_value = 1.0
+    color.location = (390, 180)
+    links.new(tint.outputs["Tint"], color.inputs[1])
+    links.new(shade, color.inputs[2])
+    links.new(color.outputs[0], output.inputs["Color"])
+
+    detail = pattern
+    if kind != "timber":
+        detail = nodes.new("ShaderNodeTexNoise")
+        detail.location = (-210, -295 if kind != "plaster" else -630)
+        detail.inputs["Scale"].default_value = grain_scale
+        detail.inputs["Detail"].default_value = 2.0
+        links.new(vector, detail.inputs["Vector"])
+    bump = nodes.new("ShaderNodeBump")
+    bump.location = (390, -80)
+    bump.inputs["Distance"].default_value = depth
+    links.new(detail.outputs["Fac"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], output.inputs["Normal"])
+    return group
+
+
+def configure_architecture_surface(material, shader, kind):
+    tree = material.node_tree
+    surface = tree.nodes.new("ShaderNodeGroup")
+    surface.name = "Architecture Surface"
+    surface.label = f"{kind.title()} · Colour and Relief"
+    surface.location = (shader.location.x - 240, shader.location.y)
+    surface.node_tree = _architecture_surface(kind)
+    surface.inputs["Tint"].default_value = material.diffuse_color
+    if kind == "timber":
+        material["grain_aligned_uv"] = True
+    shader.inputs["Roughness"].default_value = {
+        "plaster": 0.89,
+        "timber": 0.68,
+        "clay": 0.81,
+        "stone": 0.86,
+    }[kind]
+    tree.links.new(surface.outputs["Color"], shader.inputs["Base Color"])
+    tree.links.new(surface.outputs["Normal"], shader.inputs["Normal"])
+
+
 def configure_surface_materials(materials, shader_for):
     meadow, bare = meadow_images()
     for key in ("terrain", "bare_terrain", "world_water"):

@@ -21,7 +21,11 @@ from civic_blender import (
 )
 from civic_rules import civic_navigation
 from fortification_blender import build_walls
-from game_materials import configure_surface_materials, purge_unused_images
+from game_materials import (
+    configure_architecture_surface,
+    configure_surface_materials,
+    purge_unused_images,
+)
 from settlement_rules import (
     SettlementConfig,
     make_settlement,
@@ -119,6 +123,20 @@ def _materials(generation):
         "well_water": "34535a",
         "lantern_glow": "ffd291",
     }
+    finishes = {
+        "castle_plaster": "plaster",
+        "castle_stone": "stone",
+        "ashlar_light": "stone",
+        "ashlar_dark": "stone",
+        "castle_trim": "stone",
+        "stone": "stone",
+        "stone_light": "stone",
+        "timber": "timber",
+        "wood": "timber",
+        "castle_slate": "stone",
+        "castle_cone": "stone",
+        "castle_roof": "clay",
+    }
     result = {}
     for key, color in colors.items():
         material = bpy.data.materials.new("Settlement_" + key)
@@ -144,6 +162,9 @@ def _materials(generation):
         if key == "iron":
             shader.inputs["Metallic"].default_value = 0.65
             shader.inputs["Roughness"].default_value = 0.40
+        finish = finishes.get(key)
+        if finish:
+            configure_architecture_surface(material, shader, finish)
         result[key] = material
     configure_surface_materials(result, houses._principled_shader)
     return result

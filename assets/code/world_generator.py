@@ -297,7 +297,7 @@ def main(argv=None):
     model = bool(args.output or args.render or args.ogre_output)
     if model and bpy is None:
         parser.error("Blender is required for model, render and OGRE output")
-    config = _read_config(args.config)
+    config = WorldConfig.from_dict(blueprint)
     if args.seed is not None:
         config = replace(config, seed=args.seed)
     if args.focus and args.focus not in {s.id for s in config.settlements}:

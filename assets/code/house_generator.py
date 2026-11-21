@@ -22,6 +22,7 @@ if __name__ == "__main__":
         "house_rules",
         "interior_rules",
         "interior_blender",
+        "game_materials",
     ):
         if module_name in sys.modules:
             importlib.reload(sys.modules[module_name])
@@ -50,6 +51,7 @@ try:
     from mathutils import Vector
 
     import interior_blender
+    from game_materials import configure_architecture_surface
 except ModuleNotFoundError:
     bpy = None
     Vector = None
@@ -181,6 +183,18 @@ def _make_materials(config):
     for i in range(7):
         specifications[f"cladding_{i}"] = base
         specifications[f"roof_{i}"] = colors["roof"]
+    finishes = {
+        "plaster": "plaster",
+        "trim": "timber",
+        "frame": "timber",
+        "door": "timber",
+        "wood": "timber",
+        "roof": "clay",
+        "stone": "stone",
+        "foundation": "stone",
+        "brick": "clay",
+        "cladding": "clay" if config.wall_style == "BRICK" else "timber",
+    }
     materials = {}
     for key, color in specifications.items():
         brightness = 0.90 + 0.033 * int(key[-1]) if key[-1].isdigit() else 1.0
@@ -195,6 +209,10 @@ def _make_materials(config):
         if key == "metal":
             shader.inputs["Metallic"].default_value = 0.65
             shader.inputs["Roughness"].default_value = 0.35
+        if config.architecture == "MEDIEVAL":
+            finish = finishes.get(key.rstrip("0123456789").rstrip("_"))
+            if finish:
+                configure_architecture_surface(material, shader, finish)
         materials[key] = material
     return materials
 
@@ -330,9 +348,26 @@ class MeshBatch:
         # Face-local UVs use metres and overlap for tiling textures.
         # Lightmaps and unique painting atlases need separate packing.
         uv = mesh.uv_layers.new(name="UVMap")
+        grain_slots = {
+            index
+            for index, material in enumerate(mesh.materials)
+            if material is not None and material.get("grain_aligned_uv")
+        }
         for face in mesh.polygons:
-            origin = mesh.vertices[face.vertices[0]].co
-            u = (mesh.vertices[face.vertices[1]].co - origin).normalized()
+            a, b = face.vertices[:2]
+            if face.material_index in grain_slots:
+                outline = tuple(face.vertices)
+                a, b = max(
+                    zip(outline, outline[1:] + outline[:1], strict=True),
+                    key=lambda edge: (
+                        (
+                            mesh.vertices[edge[1]].co
+                            - mesh.vertices[edge[0]].co
+                        ).length_squared
+                    ),
+                )
+            origin = mesh.vertices[a].co
+            u = (mesh.vertices[b].co - origin).normalized()
             v = face.normal.cross(u).normalized()
             for loop_index in face.loop_indices:
                 co = (

@@ -15,6 +15,10 @@ Blender Python과 표준 라이브러리만으로 **주택·실내·성·도시�
 | ![성 실내](docs/images/castle_interior.jpg) | ![성벽 도시](docs/images/city.jpg) |
 | **해안 항구 정착지 (해안선·안벽·부두·계류선)** | **강변 정착지 (하천·목조 다리·우물·마을 도로)** |
 | ![해안 항구 정착지](docs/images/harbor_town.jpg) | ![강변 정착지](docs/images/riverside_town.jpg) |
+| **성당 (중앙 신랑·측랑·버팀벽)** | **모스크 (돔·안뜰·기도실)** |
+| ![아틀라스 정착지의 성당 외관](docs/images/cathedral.jpg) | ![돔과 안뜰이 있는 모스크 외관](docs/images/mosque.jpg) |
+| **카타콤 던전 (묘실·석관)** | **지하 보고 던전 (저장실·봉인석)** |
+| ![카타콤 내부의 석관과 석조 통로](docs/images/catacomb.jpg) | ![지하 보고 내부의 봉인석](docs/images/vault.jpg) |
 
 ## 주요 모듈
 

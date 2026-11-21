@@ -87,6 +87,41 @@ assert generator._principled_shader(material).type == "BSDF_PRINCIPLED"
 bpy.data.materials.remove(material)
 config = HouseConfig(width=4.5, depth=4.2, floors=1)
 collection, root, plan = generator.build_house(config)
+finishes = set()
+for material in {
+    material
+    for obj in collection.objects
+    if obj.type == "MESH"
+    for material in obj.data.materials
+}:
+    if surface := material.node_tree.nodes.get("Architecture Surface"):
+        shader = generator._principled_shader(material)
+        assert tuple(surface.inputs["Tint"].default_value) == tuple(
+            material.diffuse_color
+        )
+        assert shader.inputs["Base Color"].links[0].from_node == surface
+        assert shader.inputs["Normal"].links[0].from_node == surface
+        finishes.add(surface.node_tree.name)
+assert finishes == {
+    "Asgen Plaster Surface",
+    "Asgen Timber Surface",
+    "Asgen Clay Surface",
+    "Asgen Stone Surface",
+}
+timber = next(
+    obj
+    for obj in collection.objects
+    if obj.get("house_geometry_role") == "Timber"
+)
+grain_uv = timber.data.uv_layers.active.data
+for face in timber.data.polygons:
+    verts = [timber.data.vertices[index].co for index in face.vertices]
+    u = [grain_uv[index].uv.x for index in face.loop_indices]
+    longest = max(
+        (b - a).length
+        for a, b in zip(verts, verts[1:] + verts[:1], strict=True)
+    )
+    assert max(u) - min(u) >= longest - 1e-5
 first = mesh_signature(collection)
 collection, root, plan = generator.build_house(config, replace=collection)
 assert mesh_signature(collection) == first, "Same seed changed the mesh"

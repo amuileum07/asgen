@@ -109,9 +109,12 @@ def _tint_roof(collection, seed):
             for c in rgb
         )
         material.diffuse_color = (*linear, colour[3])
-        houses._principled_shader(material).inputs[
-            "Base Color"
-        ].default_value = material.diffuse_color
+        if surface := material.node_tree.nodes.get("Architecture Surface"):
+            surface.inputs["Tint"].default_value = material.diffuse_color
+        else:
+            houses._principled_shader(material).inputs[
+                "Base Color"
+            ].default_value = material.diffuse_color
 
 
 def _stairs(batch, start, end, width, material):
