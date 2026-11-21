@@ -7,7 +7,6 @@ from dataclasses import replace
 import bpy
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
-from mathutils.noise import noise
 
 from castle_blender import _pointed_roof
 from castle_roof_rules import RoofSpec
@@ -415,49 +414,155 @@ def ground_cast(mesh, bvh):
     return cast
 
 
-def add_conifer_crown(batch, base, height, material, rng):
-    """Layer irregular needle masses around a common trunk."""
-    x, y, z = base
+def _tree_stem(batch, points, radii, turn, sides):
+    axis = (points[-1] - points[0]).normalized()
+    horizontal = Vector((math.cos(turn), math.sin(turn), 0))
+    u = axis.cross(horizontal).normalized()
+    v = axis.cross(u)
+    first = len(batch.vertices)
+    for point, radius in zip(points, radii, strict=True):
+        for side in range(sides):
+            angle = side * math.tau / sides
+            offset = u * math.cos(angle) + v * math.sin(angle)
+            batch.vertices.append(tuple(point + radius * offset))
+    last = first + (len(points) - 1) * sides
+    faces = [
+        tuple(range(first + sides - 1, first - 1, -1)),
+        tuple(range(last, last + sides)),
+    ]
+    for a in range(first, last, sides):
+        for side in range(sides):
+            i = a + side
+            j = a + (side + 1) % sides
+            faces.append((i, j, j + sides, i + sides))
+    batch.faces.extend(faces)
+    batch.face_materials.extend([batch.material_indices["wood"]] * len(faces))
+
+
+def _leaf_cluster(batch, centre, radius, depth, turn, material, rng, rounded):
+    first = len(batch.vertices)
+    sides = 6
+    profile = (
+        ((0.60, -0.39), (1.0, -0.02), (0.65, 0.33))
+        if rounded
+        else ((0.64, -0.42), (1.0, -0.20), (0.49, 0.26))
+    )
+    rings = len(profile)
+    for side in range(sides):
+        angle = turn + side * math.tau / sides
+        reach = radius * rng.uniform(0.80, 1.16)
+        dz = depth * rng.uniform(-0.14, 0.14)
+        for ring, (scale, level) in enumerate(profile):
+            yaw = angle + (ring - 1) * 0.12
+            batch.vertices.append(
+                (
+                    centre.x + math.cos(yaw) * reach * scale,
+                    centre.y + math.sin(yaw) * reach * scale,
+                    centre.z + depth * level + dz,
+                )
+            )
+    bottom = len(batch.vertices)
+    batch.vertices.append((centre.x, centre.y, centre.z - depth * 0.54))
+    batch.vertices.append(
+        (
+            centre.x + radius * 0.18 * math.cos(turn),
+            centre.y + radius * 0.18 * math.sin(turn),
+            centre.z + depth * (0.52 if rounded else 0.68),
+        )
+    )
+    slot = batch.material_indices[material]
+    for side in range(sides):
+        a = first + side * rings
+        b = first + (side + 1) % sides * rings
+        batch.faces.append((bottom, b, a))
+        batch.faces.extend(
+            (a + j, b + j, b + j + 1, a + j + 1) for j in range(rings - 1)
+        )
+        batch.faces.append((a + rings - 1, b + rings - 1, bottom + 1))
+        batch.face_materials.extend([slot] * (rings + 1))
+
+
+def add_tree(
+    crowns, trunks, branches, base, height, material, rng, *, broadleaf_chance
+):
+    """Add a tapered trunk, branching limbs and an irregular crown."""
     turn = rng.uniform(0, math.tau)
     spread = rng.uniform(0.84, 1.13)
-    sway_x, sway_y = (rng.uniform(-0.09, 0.09) * height for _ in range(2))
-    offset = rng.uniform(-80, 80)
-    sides = 9
-    slot = batch.material_indices[material]
-    for level, (start, radius, rise) in enumerate(
-        ((0.26, 0.30, 0.37), (0.47, 0.24, 0.35), (0.68, 0.155, 0.34))
-    ):
-        start += rng.uniform(-0.025, 0.025)
-        phase = turn + level * 0.88
-        first = len(batch.vertices)
-        for side in range(sides):
-            angle = phase + side * math.tau / sides
-            dx, dy = math.cos(angle), math.sin(angle)
-            shape = noise(Vector((2.6 * dx + offset, 2.6 * dy, level * 3.2)))
-            reach = height * radius * spread * (1 + 0.25 * shape)
-            for t, fullness in ((0.0, 0.59), (0.19, 1.0)):
-                h = start + rise * t
-                batch.vertices.append(
-                    (
-                        x + dx * reach * fullness + sway_x * h,
-                        y + dy * reach * fullness + sway_y * h,
-                        z + height * (h + shape * 0.033),
-                    )
-                )
-        tip = len(batch.vertices)
-        top = start + rise
-        batch.vertices.append(
-            (x + sway_x * top, y + sway_y * top, z + height * top)
+    lean = Vector((rng.uniform(-0.09, 0.09), rng.uniform(-0.09, 0.09), 0))
+    detail = random.Random(rng.uniform(-80, 80))
+    tier_jitter = [rng.uniform(-0.025, 0.025) for _ in range(3)]
+    broadleaf = detail.random() < broadleaf_chance
+    origin = Vector(base)
+    up = Vector((0, 0, 1))
+    bend = Vector((-lean.y, lean.x, 0)) * 0.46
+
+    def stem(level):
+        return origin + height * (
+            up * level + lean * level**2 + bend * math.sin(level * math.pi)
         )
-        batch.faces.append(
-            tuple(first + i * 2 for i in reversed(range(sides)))
+
+    width = height * (0.050 if broadleaf else 0.038)
+    _tree_stem(
+        trunks,
+        [stem(level) for level in (-0.04, 0.09, 0.39, 0.79)],
+        [width * scale for scale in (1.12, 0.79, 0.62, 0.24)],
+        turn,
+        6,
+    )
+    if broadleaf:
+        limbs = (
+            (0.35, 0.61, 0.22, 0.17, 0.23),
+            (0.44, 0.67, 0.27, 0.18, 0.26),
+            (0.48, 0.64, 0.23, 0.16, 0.23),
+            (0.55, 0.76, 0.22, 0.19, 0.25),
+            (0.62, 0.82, 0.17, 0.16, 0.23),
         )
-        batch.face_materials.append(slot)
-        for side in range(sides):
-            a = first + side * 2
-            b = first + (side + 1) % sides * 2
-            batch.faces.extend(((a, b, b + 1, a + 1), (a + 1, b + 1, tip)))
-            batch.face_materials.extend((slot, slot))
+        tip_radius, tip_depth = 0.18, 0.23
+    else:
+        limbs = (
+            (0.33, 0.40, 0.23, 0.17, 0.23),
+            (0.37, 0.43, 0.21, 0.16, 0.22),
+            (0.47, 0.55, 0.18, 0.15, 0.25),
+            (0.52, 0.59, 0.16, 0.14, 0.23),
+            (0.62, 0.70, 0.13, 0.13, 0.27),
+            (0.67, 0.74, 0.10, 0.12, 0.26),
+        )
+        tip_radius, tip_depth = 0.12, 0.29
+    for i, (start, end, reach, radius, depth) in enumerate(limbs):
+        angle = turn + i * 2.39996 + detail.uniform(-0.24, 0.24)
+        direction = Vector((math.cos(angle), math.sin(angle), 0))
+        end += tier_jitter[i % 3]
+        base_point = stem(start)
+        tip = stem(end) + direction * (height * reach * spread)
+        if i < (4 if broadleaf else 3):
+            elbow = base_point.lerp(tip, 0.53) - up * (height * 0.032)
+            _tree_stem(
+                branches,
+                [base_point, elbow, tip],
+                [width * 0.43, width * 0.27, width * 0.085],
+                angle + math.pi / 2,
+                4,
+            )
+        _leaf_cluster(
+            crowns,
+            tip,
+            height * radius * spread,
+            height * depth,
+            angle,
+            material,
+            detail,
+            broadleaf,
+        )
+    _leaf_cluster(
+        crowns,
+        stem(0.86),
+        height * tip_radius * spread,
+        height * tip_depth,
+        turn,
+        material,
+        detail,
+        broadleaf,
+    )
 
 
 def build_grass(

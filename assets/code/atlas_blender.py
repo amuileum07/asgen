@@ -29,7 +29,7 @@ from atlas_structures import (
     institution,
     plaza,
 )
-from civic_blender import add_conifer_crown, build_grass_meshes
+from civic_blender import add_tree, build_grass_meshes
 from civic_rules import grass_cells, grass_samples
 from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
@@ -303,6 +303,7 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
     crowns = stage.batch(f"Crown_{cell}")
     crown_weights = []
     trunks = stage.batch(f"Trunks_{cell}")
+    branches = stage.batch(f"Branches_{cell}")
     stone = stage.batch(f"Rocks_{cell}", 0.035)
 
     def reserved(x, y):
@@ -344,16 +345,23 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
             )
             if z > 1510:
                 height *= 0.57
-            cylinder(
-                trunks,
-                (x, y, z - 0.18),
-                0.047 * height,
-                height * 0.67,
-                "wood",
-                9,
-            )
+            broadleaf = {
+                "MOUNTAIN": 0.12,
+                "SNOW": 0.04,
+                "FOREST": 0.46,
+                "MARSH": 0.86,
+            }.get(climate, 0.72)
             begin = len(crowns.vertices)
-            add_conifer_crown(crowns, (x, y, z), height, "leaves", rng)
+            add_tree(
+                crowns,
+                trunks,
+                branches,
+                (x, y, z),
+                height,
+                "leaves",
+                rng,
+                broadleaf_chance=broadleaf,
+            )
             crown_weights.extend(
                 min(1.0, max(0.0, (p[2] - z) / height)) ** 1.6
                 for p in crowns.vertices[begin:]
@@ -365,6 +373,8 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
         for loop, item in zip(crown.data.loops, uv, strict=True):
             item.uv.y = crown_weights[loop.vertex_index]
     stage.finish(trunks, "world_tree_trunks")
+    if limbs := stage.finish(branches, "world_tree_branches"):
+        limbs["collision_enabled"] = False
     stage.finish(stone, "natural_stone")
 
     spacing = 2.85

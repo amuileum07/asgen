@@ -463,6 +463,77 @@ private:
         }
         mesh->end();
     }
+    template<std::size_t Rings>
+    static void treeTube(Ogre::ManualObject& mesh,unsigned& index,
+                         const std::array<Ogre::Vector3,Rings>& centres,
+                         const std::array<float,Rings>& radii,unsigned sides,
+                         float yaw) {
+        const auto axis=(centres.back()-centres.front()).normalisedCopy();
+        const auto u=axis.crossProduct(Ogre::Vector3(std::cos(yaw),0,std::sin(yaw))).normalisedCopy();
+        const auto v=axis.crossProduct(u);
+        for (unsigned ring=0;ring<Rings;++ring) {
+            for (unsigned i=0;i<sides;++i) {
+                const float angle=6.2831853f*i/sides;
+                const auto n=u*std::cos(angle)+v*std::sin(angle);
+                mesh.position(centres[ring]+radii[ring]*n);
+                mesh.normal(n);
+                mesh.textureCoord(float(i)/sides,float(ring)/(Rings-1));
+                const float shade=.86f+.14f*std::cos(angle);
+                mesh.colour(.21f*shade,.13f*shade,.073f*shade);
+            }
+        }
+        for (unsigned ring=0;ring<Rings-1;++ring) {
+            for (unsigned i=0;i<sides;++i) {
+                const unsigned a=index+ring*sides+i;
+                const unsigned b=index+ring*sides+(i+1)%sides;
+                mesh.triangle(a,b,b+sides);
+                mesh.triangle(a,b+sides,a+sides);
+            }
+        }
+        index+=unsigned(Rings)*sides;
+    }
+    static void treeCrown(Ogre::ManualObject& mesh,unsigned& index,
+                          const Ogre::Vector3& centre,float radius,float depth,
+                          float yaw,float base,float height,bool rounded,
+                          const std::array<float,8>& variance) {
+        const float light=.83f+.30f*variance[7];
+        const auto emit=[&](const Ogre::Vector3& position,const Ogre::Vector3& normal,
+                            float shade) {
+            mesh.position(position);
+            mesh.normal(normal);
+            mesh.textureCoord(0,std::pow(clamp((position.y-base)/height),1.6f));
+            mesh.colour(.128f*shade,.285f*shade,.086f*shade);
+        };
+        const unsigned sides=rounded?5:6;
+        const unsigned rings=rounded?2:1;
+        for (unsigned ring=0;ring<rings;++ring) {
+            const float width=ring==0?1.f:.72f;
+            const float level=ring==0?-.23f:.24f;
+            for (unsigned i=0;i<sides;++i) {
+                const float angle=yaw+i*6.2831853f/sides;
+                const float c=std::cos(angle),s=std::sin(angle);
+                const float shape=.88f+.26f*variance[i]+.13f*std::cos(2*angle+yaw);
+                const auto point=centre+Ogre::Vector3(radius*width*shape*c,
+                    depth*(.11f*std::cos(2*angle+variance[6])+level),-radius*width*shape*s);
+                emit(point,Ogre::Vector3(c,level,-s).normalisedCopy(),light*(.86f+.18f*ring));
+            }
+        }
+        emit(centre+Ogre::Vector3(0,-depth*.60f,0),Ogre::Vector3::NEGATIVE_UNIT_Y,light*.66f);
+        emit(centre+Ogre::Vector3(radius*.17f*std::cos(yaw),depth*(rounded?.52f:.79f),
+             radius*.17f*std::sin(yaw)),Ogre::Vector3::UNIT_Y,light*1.16f);
+        const unsigned cap=index+rings*sides;
+        const unsigned upper=(rings-1)*sides;
+        for (unsigned i=0;i<sides;++i) {
+            const unsigned a=index+i,b=index+(i+1)%sides;
+            mesh.triangle(cap,b,a);
+            if (rounded) {
+                mesh.triangle(a,b,b+upper);
+                mesh.triangle(a,b+upper,a+upper);
+            }
+            mesh.triangle(a+upper,b+upper,cap+1);
+        }
+        index=cap+2;
+    }
     void vegetation(Tile& tile,Cell id,const Ogre::MaterialPtr& base) {
         const auto bound=world_.corner(id);
         auto* grass=manual(tile,"meadow",material(tile,base,1,false,true));
@@ -507,44 +578,44 @@ private:
                 }
                 const float woodland=biome==1?.042f:biome==6?.016f:.008f;
                 if (draw()>woodland || !world_.roadClear(p,2.5f)) continue;
-                const float height=3.4f+4.3f*draw(),radius=height*.049f;
+                const float height=3.4f+4.3f*draw();
+                // Keep the 48 foliage draws per tree so existing seeds keep
+                // the same tree placement and grass distribution.
+                std::array<std::array<float,8>,6> foliage{};
+                for (auto& cluster:foliage) {
+                    for (float& value:cluster) value=draw();
+                }
+                const auto& tree=foliage.back();
+                const float broadleafChance=biome==1?.46f:biome==3?.12f:biome==6?.86f:.72f;
+                const bool broadleaf=tree[0]<broadleafChance;
+                const float radius=height*(broadleaf?.050f:.038f);
                 tile.trunks.emplace_back(x,p.y,z,radius);
-                for (unsigned ring=0;ring<2;++ring) {
-                    for (unsigned k=0;k<6;++k) {
-                        const float a=yaw+k*1.04719755f;
-                        const float rx=std::cos(a),rz=std::sin(a);
-                        trunks->position(x+radius*rx,p.y+ring*height*.59f,z+radius*rz);
-                        trunks->normal(rx,0,rz);
-                        trunks->textureCoord(0,0);
-                        trunks->colour(.20f,.123f,.065f);
+                const float lean=.026f+.065f*tree[1];
+                const auto stem=[&](float level) {
+                    const float sway=height*level*level*lean;
+                    return Ogre::Vector3(x+sway*std::cos(yaw),p.y+height*level,
+                                         z+sway*std::sin(yaw));
+                };
+                treeTube(*trunks,trunkIndex,std::array{stem(-.04f),stem(.12f),stem(.83f)},
+                         std::array{radius*1.10f,radius*.77f,radius*.22f},6,yaw);
+                const float spread=.83f+.26f*tree[2];
+                for (unsigned limb=0;limb<4;++limb) {
+                    const float angle=yaw+limb*2.39996f;
+                    const float jitter=(tree[limb+3]-.50f)*.042f;
+                    const float level=(broadleaf?.61f+limb*.048f:.37f+limb*.104f)+jitter;
+                    const float reach=(broadleaf?.235f-limb*.015f:.274f-limb*.053f)*height*spread;
+                    const auto tip=stem(level)+Ogre::Vector3(std::cos(angle)*reach,0,std::sin(angle)*reach);
+                    if (limb<2) {
+                        const auto start=stem(level-(broadleaf?.20f:.08f));
+                        treeTube(*trunks,trunkIndex,std::array{start,tip},
+                                 std::array{radius*.45f,radius*.09f},4,angle+1.5707963f);
                     }
+                    const float width=(broadleaf?.205f:.165f-limb*.015f)*height*spread;
+                    treeCrown(*leaves,leafIndex,tip,width,height*(broadleaf?.27f:.26f),
+                              angle,p.y,height,broadleaf,foliage[limb]);
                 }
-                for (unsigned k=0;k<6;++k) {
-                    const auto a=trunkIndex+k,b=trunkIndex+(k+1)%6;
-                    trunks->triangle(a,a+6,b+6);
-                    trunks->triangle(a,b+6,b);
-                }
-                trunkIndex+=12;
-                for (unsigned layer=0;layer<3;++layer) {
-                    const float low=.28f+layer*.195f,top=low+.32f;
-                    const float reach=height*(.24f-layer*.045f);
-                    for (unsigned k=0;k<8;++k) {
-                        const float a=yaw+k*.78539816f+layer*.4f;
-                        const float rx=std::cos(a),rz=std::sin(a);
-                        const float r=reach*(.78f+.34f*draw());
-                        leaves->position(x+r*rx,p.y+height*(low-.04f*draw()),z+r*rz);
-                        leaves->normal(rx*.77f,.63f,rz*.77f);
-                        leaves->textureCoord(0,low);
-                        leaves->colour(.11f+layer*.018f,.24f+layer*.029f,.090f);
-                    }
-                    leaves->position(x+height*.062f,p.y+height*top,z-height*.033f);
-                    leaves->normal(0,1,0);
-                    leaves->textureCoord(0,top);
-                    leaves->colour(.18f,.36f,.11f);
-                    for (unsigned k=0;k<8;++k)
-                        leaves->triangle(leafIndex+k,leafIndex+8,leafIndex+(k+1)%8);
-                    leafIndex+=9;
-                }
+                treeCrown(*leaves,leafIndex,stem(.87f),height*(broadleaf?.19f:.13f)*spread,
+                          height*(.23f+.06f*tree[7]),yaw,p.y,height,broadleaf,foliage[4]);
             }
         }
         for (auto* mesh:{grass,leaves,trunks}) mesh->end();

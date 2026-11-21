@@ -14,13 +14,13 @@ from castle_blender import _window, castle_batches
 from castle_interior_blender import interior_batches, room_labels, show_level
 from castle_rules import castle_point
 from civic_blender import (
-    add_conifer_crown,
+    add_tree,
     build_civic,
     build_grass,
     project_assets,
 )
 from civic_rules import civic_navigation
-from fortification_blender import build_walls, cylinder
+from fortification_blender import build_walls
 from game_materials import configure_surface_materials, purge_unused_images
 from settlement_rules import (
     SettlementConfig,
@@ -167,6 +167,7 @@ def _finish(batch, collection, root, role):
             "tree_trunks",
             "world_woodland",
             "world_tree_trunks",
+            "world_tree_branches",
         ):
             for polygon in obj.data.polygons:
                 polygon.use_smooth = len(polygon.vertices) <= 4
@@ -270,6 +271,7 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
     crowns = random.Random(f"{plan.config.seed}:crowns")
     batch = houses.MeshBatch("Settlement_Trees", materials)
     trunks = houses.MeshBatch("Settlement_Trunks", materials)
+    branches = houses.MeshBatch("Settlement_Branches", materials)
     segments, roads = road_segments(plan.roads)
     occupied = []
     radius = plan.config.effective_radius
@@ -321,13 +323,15 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
         ):
             continue
         z, height = sampler.height(x, y), rng.uniform(3, 5.5)
-        cylinder(trunks, (x, y, z - 0.1), 0.16, height * 0.62, "wood", 8)
-        add_conifer_crown(
+        add_tree(
             batch,
+            trunks,
+            branches,
             (x, y, z),
             height,
             "leaves_light" if rng.random() < 0.4 else "leaves",
             crowns,
+            broadleaf_chance=0.68,
         )
         occupied.append((x, y))
     obj = _finish(batch, collection, root, "trees")
@@ -335,6 +339,9 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
         obj["collision_enabled"] = False
         obj["export_chunk_size"] = 32
     _finish(trunks, collection, root, "tree_trunks")
+    if limbs := _finish(branches, collection, root, "world_tree_branches"):
+        limbs["collision_enabled"] = False
+        limbs["export_chunk_size"] = 32
 
 
 def remove_settlement(collection):

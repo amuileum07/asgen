@@ -12,9 +12,8 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 import settlement_blender as towns
-from civic_blender import add_conifer_crown, build_grass_meshes, ground_cast
+from civic_blender import add_tree, build_grass_meshes, ground_cast
 from civic_rules import grass_cells, grass_samples, meadow_growth
-from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
 from surface_blender import TerrainSkin, paint_land, set_edge_normals
 from surface_quality import SurfaceGradeError
@@ -438,6 +437,7 @@ def _trees(plan, project, collection, root, materials):
     crowns = random.Random(f"{plan.config.seed}:world-crowns")
     batch = MeshBatch("World_Woodland", materials)
     trunks = MeshBatch("World_Tree_Trunks", materials)
+    branches = MeshBatch("World_Tree_Branches", materials)
     grid, terrain = plan.grid, plan.terrain
     step = max(8.5, math.sqrt(math.prod(grid.size) / 24_000))
     nx, ny = (math.floor(size / step) for size in grid.size)
@@ -458,16 +458,17 @@ def _trees(plan, project, collection, root, materials):
             ):
                 continue
             height = rng.uniform(4.5, 8.3)
-            cylinder(
-                trunks,
-                (x, y, hit.z - 0.18),
-                height * 0.042,
-                height * 0.65,
-                "wood",
-                8,
-            )
             material = "leaves_light" if crowns.random() < 0.35 else "leaves"
-            add_conifer_crown(batch, (x, y, hit.z), height, material, crowns)
+            add_tree(
+                batch,
+                trunks,
+                branches,
+                (x, y, hit.z),
+                height,
+                material,
+                crowns,
+                broadleaf_chance=0.36,
+            )
     obj = towns._finish(batch, collection, root, "world_woodland")
     if obj:
         obj["collision_enabled"] = False
@@ -475,6 +476,11 @@ def _trees(plan, project, collection, root, materials):
     obj = towns._finish(trunks, collection, root, "world_tree_trunks")
     if obj:
         obj["export_chunk_size"] = 128
+    if limbs := towns._finish(
+        branches, collection, root, "world_tree_branches"
+    ):
+        limbs["collision_enabled"] = False
+        limbs["export_chunk_size"] = 128
 
 
 def _realize_site(plan, initial, occupied, collection, root, scene, materials):
