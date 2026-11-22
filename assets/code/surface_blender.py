@@ -11,6 +11,7 @@ from mathutils.geometry import delaunay_2d_cdt
 
 from castle_geometry import circle
 from surface_quality import limit_road_slopes
+from terrain_detail import refine_slopes
 from terrain_rules import (
     SpatialHash,
     boundary_distance,
@@ -161,6 +162,23 @@ def surface_mesh(plan, sampler, materials, *, skin=None):
         centre_edges=centre_edges,
         longitudinal=plan.config.max_road_grade * 0.999,
     )
+    if plan.config.art_style == "REALISTIC":
+
+        def natural(x, y):
+            return (
+                not inside_polygon((x, y), plan.boundary)
+                and not sampler.pads.query((x, y), step)
+                and not sampler.roads.query((x, y), step + 6)
+                and (
+                    not plan.castle
+                    or math.dist((x, y), plan.castle.centre[:2])
+                    > plan.castle.radius * 1.5
+                )
+            )
+
+        kept, codes = refine_slopes(
+            xyz, kept, codes, sampler.height, plan.config.terrain_seed, natural
+        )
     mesh = bpy.data.meshes.new("Game_Terrain_Roads")
     mesh.from_pydata(xyz, [], kept)
     mesh.update()

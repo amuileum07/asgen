@@ -1,18 +1,14 @@
-"""EEVEE material outputs for the atlas and legacy world previews."""
+"""Cel lighting and painted or transmissive window glass."""
 
 import bpy
 
-from house_generator import _linear_color
-
-SHADE = (0.50, 0.60, 0.76, 1)
-HALFTONE = (0.78, 0.82, 0.84, 1)
-SUN = (1.0, 0.97, 0.86, 1)
+SHADE = (0.32, 0.40, 0.57, 1)
+HALFTONE = (0.70, 0.74, 0.80, 1)
+SUN = (1.18, 1.07, 0.93, 1)
 
 
 def _lighting(foliage):
-    label = (
-        "World Toon · Foliage" if foliage else "World Toon · Stone and Wood"
-    )
+    label = "Asgen Cel · Foliage" if foliage else "Asgen Cel · Architecture"
     if existing := bpy.data.node_groups.get(label):
         return existing
     tree = bpy.data.node_groups.new(label, "ShaderNodeTree")
@@ -38,8 +34,8 @@ def _lighting(foliage):
         ((0.35, SHADE), (0.48, HALFTONE))
         if foliage
         else (
-            (0.27, SHADE),
-            (0.33, HALFTONE),
+            (0.51, SHADE),
+            (0.60, HALFTONE),
             (0.67, HALFTONE),
             (0.73, SUN),
         )
@@ -61,8 +57,24 @@ def _lighting(foliage):
     lightgate.operation = "MULTIPLY"
     out = tree.nodes.new("ShaderNodeMixRGB")
     out.blend_type = "ADD"
-    out.inputs[2].default_value = _linear_color("fff0d5")
+    out.inputs[2].default_value = (1.0, 0.87, 0.67, 1.0)
     emission = tree.nodes.new("ShaderNodeEmission")
+    for node, position in (
+        (diffuse, (-1060, 0)),
+        (direct, (-870, 0)),
+        (luminance, (-680, 0)),
+        (scale, (-490, 0)),
+        (ramp, (-270, 80)),
+        (inputs, (-220, 270)),
+        (colour, (40, 180)),
+        (rim, (-490, -320)),
+        (intensity, (-270, -320)),
+        (lightgate, (40, -150)),
+        (out, (250, 180)),
+        (emission, (450, 180)),
+        (outputs, (650, 180)),
+    ):
+        node.location = position
     for source, target in (
         (diffuse.outputs[0], direct.inputs[0]),
         (direct.outputs[0], luminance.inputs[0]),
@@ -80,6 +92,96 @@ def _lighting(foliage):
     ):
         tree.links.new(source, target)
     return tree
+
+
+def _glass(material, shader, art_style):
+    if art_style == "REALISTIC":
+        shader.inputs["Base Color"].default_value = (0.82, 0.91, 0.90, 1)
+        shader.inputs["Transmission Weight"].default_value = 0.96
+        shader.inputs["Roughness"].default_value = 0.095
+        shader.inputs["IOR"].default_value = 1.50
+        return
+    tree = material.node_tree
+    coords = tree.nodes.new("ShaderNodeTexCoord")
+    diagonal = tree.nodes.new("ShaderNodeVectorMath")
+    diagonal.operation = "DOT_PRODUCT"
+    diagonal.inputs[1].default_value = (0.84, -0.52, 0.0)
+    repeat = tree.nodes.new("ShaderNodeMath")
+    repeat.operation = "FRACT"
+    paint = tree.nodes.new("ShaderNodeValToRGB")
+    paint.label = "Sky reflection"
+    for node, offset in (
+        (coords, -860),
+        (diagonal, -660),
+        (repeat, -460),
+        (paint, -280),
+    ):
+        node.location = (shader.location.x + offset, shader.location.y)
+    ramp = paint.color_ramp
+    ramp.interpolation = "CONSTANT"
+    base = tuple(material.diffuse_color)
+    ramp.elements[0].color = base
+    ramp.elements[1].color = base
+    sky = (0.28, 0.56, 0.63, 1.0)
+    for position, colour in (
+        (0.38, sky),
+        (0.50, base),
+        (0.53, sky),
+        (0.56, base),
+    ):
+        ramp.elements.new(position).color = colour
+    for source, target in (
+        (coords.outputs["UV"], diagonal.inputs[0]),
+        (diagonal.outputs["Value"], repeat.inputs[0]),
+        (repeat.outputs[0], paint.inputs[0]),
+        (paint.outputs[0], shader.inputs["Base Color"]),
+    ):
+        tree.links.new(source, target)
+
+
+def style_material(material, shader, key, art_style):
+    if key == "glass":
+        _glass(material, shader, art_style)
+    elif art_style == "CARTOON" and key not in (
+        "water",
+        "well_water",
+        "world_water",
+        "fire",
+        "lantern_glow",
+        "metal",
+        "iron",
+        "label",
+    ):
+        foliage = key.startswith(("leaves", "grass_"))
+        _cel_outputs(material, shader, foliage)
+
+
+def _cel_outputs(material, shader, foliage):
+    tree = material.node_tree
+    if tree.nodes.get("Toon Output"):
+        return
+    layer = tree.nodes.new("ShaderNodeGroup")
+    layer.node_tree = _lighting(foliage)
+    layer.location = (shader.location.x, shader.location.y - 370)
+    cycles = tree.nodes.new("ShaderNodeBsdfToon")
+    cycles.location = (layer.location.x, layer.location.y - 160)
+    cycles.inputs["Size"].default_value = 0.68
+    cycles.inputs["Smooth"].default_value = 0.12
+    base = shader.inputs["Base Color"]
+    for socket in (layer.inputs["Albedo"], cycles.inputs["Color"]):
+        socket.default_value = base.default_value
+        if base.is_linked:
+            tree.links.new(base.links[0].from_socket, socket)
+    for engine, node, name in (
+        ("EEVEE", layer, "Toon Output"),
+        ("CYCLES", cycles, "Cycles Toon Output"),
+    ):
+        output = tree.nodes.new("ShaderNodeOutputMaterial")
+        output.name = name
+        output.target = engine
+        output.is_active_output = True
+        output.location = (node.location.x + 230, node.location.y)
+        tree.links.new(node.outputs[0], output.inputs["Surface"])
 
 
 def install_toon(collection):
@@ -108,18 +210,11 @@ def install_toon(collection):
         )
         if shader is None:
             continue
-        output = tree.nodes.new("ShaderNodeOutputMaterial")
-        output.name = "Toon Output"
-        output.target = "EEVEE"
-        layer = tree.nodes.new("ShaderNodeGroup")
-        layer.node_tree = _lighting(
+        _cel_outputs(
+            material,
+            shader,
             bool(
                 material.get("foliage_bend_uv")
                 or "leaves" in material.name.lower()
-            )
+            ),
         )
-        base = shader.inputs["Base Color"]
-        layer.inputs["Albedo"].default_value = base.default_value
-        if base.is_linked:
-            tree.links.new(base.links[0].from_socket, layer.inputs["Albedo"])
-        tree.links.new(layer.outputs[0], output.inputs["Surface"])

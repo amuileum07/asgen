@@ -8,6 +8,24 @@ Blender Python과 표준 라이브러리만으로 **주택·실내·성·도시�
 
 ## 생성 예시
 
+### 카툰풍과 실사풍 비교
+
+같은 중세 주택을 같은 시드와 카메라로 렌더했습니다. 왼쪽은 **카툰풍**, 오른쪽은 **실사풍**입니다.
+
+![동일한 중세 주택의 카툰풍과 실사풍 렌더 비교](docs/images/house_styles.jpg)
+
+아래 풍경도 같은 위치에서 렌더했습니다. 왼쪽과 오른쪽의 활엽수 잎, 침엽수 가지, 기와의 굴곡을 비교할 수 있습니다.
+
+![같은 위치에서 비교한 카툰풍과 실사풍의 활엽수·침엽수, 기와지붕과 초지](docs/images/landscape_styles.jpg)
+
+주택·도시·월드의 Blender 패널에서 **표현 스타일**을 선택할 수 있습니다. 기본값은 카툰풍입니다. JSON 최상위에 `"art_style": "REALISTIC"`을 지정하거나 생성 명령에 `--art-style REALISTIC`을 추가하면 실사풍으로 제작합니다. 같은 옵션을 아틀라스에도 사용할 수 있으며 기존 월드 옵션 `--toon`은 카툰풍을 선택합니다.
+
+카툰풍 미리보기는 EEVEE에서 단계 명암을 표현합니다. 실사풍 미리보기는 Cycles에서 절차적 표면 요철과 투과 유리를 렌더합니다. OGRE 출력은 기존 게임용 재질과 텍스처 형식을 사용합니다.
+
+실사풍은 활엽수의 가지 끝에 접힌 잎을, 침엽수의 줄기 둘레에 층층이 잔가지를 생성합니다. 숲에서는 같은 변형의 메시를 공유하고 회전과 크기를 바꿉니다. 주택에는 굴곡진 기와와 분절된 용마루를, 성벽에는 지면 경사를 따르는 덮개돌을 만듭니다. 자연 사면은 이웃 삼각형이 공유하는 모서리를 세분화해 굴곡을 더합니다. 월드 숲과 게임용 아틀라스 타일은 가지와 잎 수를 줄인 실사풍 메시를 사용합니다.
+
+### 건물과 정착지
+
 | 중세 주택 외관 (목재 골조·덧문·입체 기와) | 성 외관 (본관·주탑·별관·성벽·문루) |
 | :---: | :---: |
 | ![중세 주택 외관](docs/images/house.jpg) | ![성 외관](docs/images/castle.jpg) |
@@ -24,7 +42,7 @@ Blender Python과 표준 라이브러리만으로 **주택·실내·성·도시�
 
 | 기능 | 진입 스크립트 | 상세 문서 |
 |---|---|---|
-| 카툰·중세 주택 및 실내·가구 배치 | `assets/code/house_generator.py` | [README](assets/code/README.md) · [INTERIOR](assets/code/INTERIOR.md) |
+| 카툰풍·실사풍 중세 주택 및 실내·가구 배치 | `assets/code/house_generator.py` | [README](assets/code/README.md) · [INTERIOR](assets/code/INTERIOR.md) |
 | 마을·도시·수도, 성벽, 공공시설, 성 외관/실내 | `assets/code/settlement_generator.py` | [SETTLEMENT](assets/code/SETTLEMENT.md) · [CASTLE_INTERIOR](assets/code/CASTLE_INTERIOR.md) · [CIVIC](assets/code/CIVIC.md) |
 | 커스텀 소형 월드 (지형·해안·호수·강·정착지) | `assets/code/world_generator.py` | [WORLD](assets/code/WORLD.md) |
 | 커스텀 대규모 아틀라스 (256m 타일·기후·도로·던전) | `assets/code/world_generator.py` (`blueprint_version: 2`) | [ATLAS](assets/code/ATLAS.md) |

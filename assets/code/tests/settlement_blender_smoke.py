@@ -45,7 +45,12 @@ bpy.context.scene.collection.objects.link(sentinel)
 ui.register()
 ui.register()
 config = SettlementConfig(
-    scale="VILLAGE", max_buildings=8, terrain_step=5, trees=False, walls="ON"
+    scale="VILLAGE",
+    max_buildings=8,
+    terrain_step=5,
+    trees=False,
+    walls="ON",
+    art_style="REALISTIC",
 )
 collection, root, plan = builder.build_settlement(config)
 validate(collection)
@@ -82,6 +87,7 @@ assert (
     >= 1
 )
 assert '"door_open": true' in house_root["config_json"]
+assert '"art_style": "REALISTIC"' in house_root["config_json"]
 initial = counts()
 again, _ = builder.materialize_building(instance, root, collection)
 assert again == interior and counts() == initial

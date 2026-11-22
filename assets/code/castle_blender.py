@@ -652,7 +652,7 @@ def _hollow_roofs(architecture, masonry, roofs, details):
         )
 
 
-def castle_batches(castle, sampler, materials):
+def castle_batches(castle, sampler, materials, *, realistic=False):
     """Return world-space batches; let the caller manage ownership."""
     architecture = castle.architecture
     s = architecture.scale
@@ -716,6 +716,7 @@ def castle_batches(castle, sampler, materials):
         decorate_gates=False,
         thickness=max(2.2, 2.0 * s) if castle.interior else None,
         crenellations=not bool(castle.interior),
+        realistic=realistic,
     )
     _gatehouse(
         masonry, roofs, details, architecture, hollow=bool(castle.interior)

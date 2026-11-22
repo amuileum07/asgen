@@ -239,7 +239,11 @@ def _write_index(out, atlas, plan, *, terrain=True):
     if tiles.resolve() != tiles:
         raise ValueError("Atlas tiles must be inside the output folder")
     old = marker.read_text() if marker.exists() else ""
-    blueprint = json.dumps(atlas.blueprint, sort_keys=True, ensure_ascii=False)
+    values = dict(atlas.blueprint)
+    if atlas.art_style == "CARTOON":
+        # Preserve the atlas identity for the original --toon alias.
+        values.pop("art_style", None)
+    blueprint = json.dumps(values, sort_keys=True, ensure_ascii=False)
     identity = (
         f"medieval_atlas_v2 {atlas.seed} {atlas.size[0]} {atlas.size[1]} "
         f"{stable_seed(blueprint):08x}"
@@ -382,10 +386,6 @@ def run_blueprint(args, blueprint, bpy, base_dir=None):
             atlas, plan, cells, meadow=meadow, backdrop=backdrop
         )
         preview(collection, root, atlas, plan, cells, focus, meadow=meadow)
-        if args.toon:
-            from toon_preview import install_toon
-
-            install_toon(collection)
         if args.render:
             args.render.resolve().parent.mkdir(parents=True, exist_ok=True)
             bpy.context.scene.render.filepath = str(args.render.resolve())

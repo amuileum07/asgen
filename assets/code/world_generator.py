@@ -12,6 +12,7 @@ SCRIPT = Path(__file__).resolve()
 if str(SCRIPT.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT.parent))
 
+from art_style import ART_STYLES, STYLE_ITEMS  # noqa: E402
 from world_rules import WorldConfig, make_world  # noqa: E402
 
 try:
@@ -125,6 +126,11 @@ if bpy is not None:
     from ogre_export import export_settlement
 
     class WORLDMAP_Settings(bpy.types.PropertyGroup):
+        art_style: bpy.props.EnumProperty(
+            name="표현 스타일",
+            items=(("CONFIG", "JSON 설정", "기본값은 카툰풍"), *STYLE_ITEMS),
+            default="CONFIG",
+        )
         config: bpy.props.StringProperty(
             name="월드 설정 JSON", subtype="FILE_PATH", default=str(PRESET)
         )
@@ -148,6 +154,8 @@ if bpy is not None:
             settings = getattr(context.scene, SETTINGS)
             try:
                 config = _read_config(Path(bpy.path.abspath(settings.config)))
+                if settings.art_style != "CONFIG":
+                    config = replace(config, art_style=settings.art_style)
                 collection, root, plan = builder.build_world(
                     make_world(config)
                 )
@@ -211,6 +219,7 @@ if bpy is not None:
             settings = getattr(context.scene, SETTINGS)
             layout = self.layout
             layout.prop(settings, "config")
+            layout.prop(settings, "art_style")
             layout.operator("worldmap.generate")
             layout.prop(settings, "target")
             layout.prop(settings, "focus")
@@ -264,7 +273,11 @@ def main(argv=None):
     parser.add_argument("--tile", action="append", default=[], metavar="X,Y")
     parser.add_argument("--atlas-index-only", action="store_true")
     parser.add_argument("--all-sites", action="store_true")
-    parser.add_argument("--toon", action="store_true")
+    style = parser.add_mutually_exclusive_group()
+    style.add_argument("--art-style", type=str.upper, choices=ART_STYLES)
+    style.add_argument(
+        "--toon", dest="art_style", action="store_const", const="CARTOON"
+    )
     parser.add_argument(
         "--meadow-view",
         action="store_true",
@@ -286,6 +299,8 @@ def main(argv=None):
         ):
             parser.error(f"Use a new {suffix} path, or --force: {path}")
     blueprint = json.loads(args.config.read_text(encoding="utf-8-sig"))
+    if args.art_style:
+        blueprint["art_style"] = args.art_style
     if "blueprint_version" in blueprint:
         from atlas_generator import run_blueprint
 
@@ -311,10 +326,6 @@ def main(argv=None):
             builder.preview_world(
                 collection, root, args.focus, meadow=args.meadow_view
             )
-            if args.toon:
-                from toon_preview import install_toon
-
-                install_toon(collection)
         if args.ogre_output:
             print("Exporting OGRE terrain and collision", flush=True)
             export_settlement(collection, root, args.ogre_output)

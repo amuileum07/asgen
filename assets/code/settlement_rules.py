@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
+from art_style import validate_art_style
 from castle_interior_rules import CastleInterior, make_castle_interior
 from castle_rules import (
     CastleArchitecture,
@@ -126,8 +127,10 @@ class SettlementConfig:
     grass: bool = True
     grass_density: float = 0.55
     civic: bool = True
+    art_style: str = "CARTOON"
 
     def validate(self):
+        validate_art_style(self.art_style)
         if self.scale not in PROFILES:
             raise ValueError(f"scale must be one of {tuple(PROFILES)}")
         for name in ("seed", "terrain_seed", "max_buildings"):
@@ -324,6 +327,7 @@ def _template(identifier, width, depth, floors, config, palette, style):
         "RIVERSIDE": 44,
     }.get(style, 40 + len(identifier) % 8)
     house = HouseConfig(
+        art_style=config.art_style,
         seed=config.seed + len(identifier) * 19,
         detail_seed=config.seed % 41,
         width=width,

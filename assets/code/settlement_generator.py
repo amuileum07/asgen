@@ -29,6 +29,7 @@ if __name__ == "__main__":
         "castle_blender",
         "castle_interior_blender",
         "game_materials",
+        "tree_blender",
         "civic_blender",
         "surface_quality",
         "surface_blender",
@@ -39,6 +40,7 @@ if __name__ == "__main__":
         if name in sys.modules:
             importlib.reload(sys.modules[name])
 
+from art_style import ART_STYLES, STYLE_ITEMS  # noqa: E402
 from settlement_rules import PROFILES, SettlementConfig, make_settlement  # noqa: E402
 
 try:
@@ -133,6 +135,9 @@ if bpy is not None:
             name="현재 도시",
             type=bpy.types.Collection,
             poll=lambda self, value: builder.root_for(value) is not None,
+        )
+        art_style: bpy.props.EnumProperty(
+            name="표현 스타일", items=STYLE_ITEMS, default="CARTOON"
         )
         scale: bpy.props.EnumProperty(
             name="규모",
@@ -380,6 +385,7 @@ if bpy is not None:
             settings = getattr(context.scene, SETTINGS_KEY)
             for name in (
                 "target",
+                "art_style",
                 "scale",
                 "seed",
                 "terrain_seed",
@@ -466,6 +472,7 @@ def _arguments(argv):
     )
     parser.add_argument("--config", type=Path)
     parser.add_argument("--scale", choices=tuple(PROFILES))
+    parser.add_argument("--art-style", type=str.upper, choices=ART_STYLES)
     for name in ("seed", "terrain_seed", "max_buildings"):
         parser.add_argument("--" + name.replace("_", "-"), type=int)
     for name in (

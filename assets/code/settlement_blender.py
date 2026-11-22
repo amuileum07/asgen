@@ -10,6 +10,7 @@ import bpy
 from mathutils import Vector
 
 import house_generator as houses
+from art_style import preview_engine
 from castle_blender import _window, castle_batches
 from castle_interior_blender import interior_batches, room_labels, show_level
 from castle_rules import castle_point
@@ -17,6 +18,7 @@ from civic_blender import (
     add_tree,
     build_civic,
     build_grass,
+    ground_cast,
     project_assets,
 )
 from civic_rules import civic_navigation
@@ -40,6 +42,8 @@ from terrain_rules import (
     segment_projection,
     value_noise,
 )
+from toon_preview import style_material
+from tree_blender import TreeLibrary
 
 OWNER_KEY = "_settlement_owner"
 OWNER = "medieval_settlement_v1"
@@ -65,7 +69,7 @@ def _owned(obj, generation):
     obj[GENERATION_KEY] = generation
 
 
-def _materials(generation):
+def _materials(generation, art_style):
     colors = {
         "grass": "87a561",
         "grass_light": "9aa877",
@@ -138,6 +142,18 @@ def _materials(generation):
         "castle_roof": "clay",
     }
     result = {}
+    realistic = art_style == "REALISTIC"
+    if realistic:
+        colors.update(bark="635043", leaves_shadow="465c38")
+        finishes.update(
+            rock="stone",
+            rock_light="stone",
+            court_paving="stone",
+            interior_wall="plaster",
+            interior_floor="timber",
+            furniture_wood="timber",
+            stair_wood="timber",
+        )
     for key, color in colors.items():
         material = bpy.data.materials.new("Settlement_" + key)
         _owned(material, generation)
@@ -159,14 +175,29 @@ def _materials(generation):
         if key in ("water", "well_water", "world_water"):
             shader.inputs["Roughness"].default_value = 0.20
             shader.inputs["Metallic"].default_value = 0.20
-        if key == "iron":
+        if realistic and key.startswith("leaves"):
+            material["foliage_bend_uv"] = "V"
+            shader.inputs["Roughness"].default_value = 0.55
+            shader.inputs["Subsurface Weight"].default_value = 0.09
+            shader.inputs["Subsurface Radius"].default_value = (
+                0.05,
+                0.09,
+                0.03,
+            )
+        if key == "iron" or (realistic and key == "metal"):
             shader.inputs["Metallic"].default_value = 0.65
             shader.inputs["Roughness"].default_value = 0.40
         finish = finishes.get(key)
         if finish:
-            configure_architecture_surface(material, shader, finish)
+            configure_architecture_surface(
+                material, shader, finish, realistic=realistic
+            )
         result[key] = material
     configure_surface_materials(result, houses._principled_shader)
+    for key, material in result.items():
+        style_material(
+            material, houses._principled_shader(material), key, art_style
+        )
     return result
 
 
@@ -285,7 +316,7 @@ def _shops_and_markets(plan, collection, root, materials):
     _finish(batch, collection, root, "commerce")
 
 
-def _trees(plan, sampler, collection, root, materials, ground=None):
+def _trees(plan, sampler, collection, root, materials, ground=None, cast=None):
     if not plan.config.trees:
         return
     rng = random.Random(f"{plan.config.seed}:trees")
@@ -293,6 +324,11 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
     batch = houses.MeshBatch("Settlement_Trees", materials)
     trunks = houses.MeshBatch("Settlement_Trunks", materials)
     branches = houses.MeshBatch("Settlement_Branches", materials)
+    library = (
+        TreeLibrary(collection, root, materials, _finish, town=True)
+        if plan.config.art_style == "REALISTIC"
+        else None
+    )
     segments, roads = road_segments(plan.roads)
     occupied = []
     radius = plan.config.effective_radius
@@ -344,6 +380,10 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
         ):
             continue
         z, height = sampler.height(x, y), rng.uniform(3, 5.5)
+        if library and cast:
+            hit = cast(x, y)[0]
+            if hit is not None:
+                z = hit.z
         add_tree(
             batch,
             trunks,
@@ -353,6 +393,7 @@ def _trees(plan, sampler, collection, root, materials, ground=None):
             "leaves_light" if rng.random() < 0.4 else "leaves",
             crowns,
             broadleaf_chance=0.68,
+            library=library,
         )
         occupied.append((x, y))
     obj = _finish(batch, collection, root, "trees")
@@ -478,7 +519,7 @@ def build_settlement(
         root.location = location
     materials = {}
     try:
-        materials = _materials(generation)
+        materials = _materials(generation, config.art_style)
         sampler = TerrainSampler(plan)
         mesh, roads = surface_mesh(plan, sampler, materials, skin=skin)
         civic, ground_bvh = project_assets(plan, mesh)
@@ -515,11 +556,15 @@ def build_settlement(
                 plan.wall_height,
                 sampler,
                 22 if config.scale == "CAPITAL" else 28,
+                realistic=config.art_style == "REALISTIC",
             )
         _finish(wall_batch, collection, root, "fortifications")
         if plan.castle:
             for role, batch in castle_batches(
-                plan.castle, sampler, materials
+                plan.castle,
+                sampler,
+                materials,
+                realistic=config.art_style == "REALISTIC",
             ).items():
                 obj = _finish(batch, collection, root, "castle_" + role)
                 if obj and role == "masonry":
@@ -569,6 +614,7 @@ def build_settlement(
             root,
             materials,
             skin.colour if skin else None,
+            ground_cast(mesh, ground_bvh),
         )
         build_civic(
             plan,
@@ -730,7 +776,8 @@ def preview_stage(plan, collection, root):
     if background:
         background.inputs["Color"].default_value = (0.72, 0.82, 0.91, 1)
         background.inputs["Strength"].default_value = 0.6
-    scene.render.engine = "CYCLES"
+    saved = json.loads(root["config_json"])
+    scene.render.engine = preview_engine(saved.get("art_style", "REALISTIC"))
     scene.cycles.samples, scene.cycles.use_denoising = 24, True
     scene.cycles.device = "CPU"
     scene.render.resolution_x, scene.render.resolution_y = 1400, 1100

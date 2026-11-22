@@ -40,6 +40,7 @@ class LayoutTests(unittest.TestCase):
                 replace(
                     config,
                     detail_seed=999,
+                    art_style="REALISTIC",
                     wall_style="WOOD_VERTICAL",
                     palette="COASTAL",
                 )

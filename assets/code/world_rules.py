@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field, replace
 from functools import partial
 from random import Random
 
+from art_style import validate_art_style
 from settlement_rules import (
     SITE_ASPECTS,
     LocalSite,
@@ -50,6 +51,7 @@ class WorldConfig:
     lakes: tuple = ()
     rivers: tuple = ()
     settlements: tuple = ()
+    art_style: str = "CARTOON"
 
     @classmethod
     def from_dict(cls, values):
@@ -78,6 +80,7 @@ class WorldConfig:
         return cls(**values).validate()
 
     def validate(self):
+        validate_art_style(self.art_style)
         if type(self.seed) is not int or not 0 <= self.seed <= 2_000_000_000:
             raise ValueError(
                 "World seed must be an integer in [0, 2000000000]"
@@ -456,7 +459,10 @@ def choose_site(terrain, grid, request, occupied, *, rejected=()):
             reason = "too close to another settlement"
             continue
         try:
-            plan = make_settlement(request.settlement, site=local)
+            config = replace(
+                request.settlement, art_style=terrain.config.art_style
+            )
+            plan = make_settlement(config, site=local)
             if not _city_dry(terrain, centre, plan):
                 reason = "a city street or building would enter water"
                 continue

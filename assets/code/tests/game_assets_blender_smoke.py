@@ -21,10 +21,22 @@ from terrain_rules import boundary_distance, terrain_outline
 
 collection, root, plan = builder.build_settlement(
     SettlementConfig(
-        scale="CITY", radius=85, max_buildings=8, trees=False, terrain_step=3
+        scale="CITY",
+        radius=85,
+        max_buildings=8,
+        art_style="REALISTIC",
+        terrain_step=3,
     )
 )
 surface = next(o for o in collection.objects if o.get("roads_integrated"))
+crowns = [o for o in collection.objects if o.get("settlement_part") == "trees"]
+assert len(crowns) > len({o.data for o in crowns}) > 1
+assert all(not o["collision_enabled"] for o in crowns)
+assert all(
+    o.get("collision_enabled", True)
+    for o in collection.objects
+    if o.get("settlement_part") == "tree_trunks"
+)
 assert root.get("grass_tufts", 0) > 0
 assert {"WELL", "FOUNTAIN", "STREET_LAMP", "STATUE_ANCHOR"} <= {
     a.kind for a in plan.civic_assets
@@ -109,6 +121,10 @@ bpy.context.view_layer.update()
 before = (len(bpy.data.objects), len(bpy.data.meshes), len(bpy.data.materials))
 with tempfile.TemporaryDirectory() as directory:
     result = export_settlement(collection, root, directory)
+    crown_names = {o.name for o in crowns}
+    exported = [n for n in result["nodes"] if n["source"] in crown_names]
+    assert len(exported) == len(crowns)
+    assert len({n["mesh"] for n in exported}) == len({o.data for o in crowns})
     assert any(
         m["placeholder"] and m["kind"] == "STATUE_ANCHOR"
         for m in result["markers"]

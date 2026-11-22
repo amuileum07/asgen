@@ -135,8 +135,9 @@ def paving_images(size=256):
     return tuple(images)
 
 
-def _architecture_surface(kind):
-    name = f"Asgen {kind.title()} Surface"
+def _architecture_surface(kind, realistic):
+    prefix = "Asgen PBR" if realistic else "Asgen Painted"
+    name = f"{prefix} {kind.title()} Surface"
     if group := bpy.data.node_groups.get(name):
         return group
     group = bpy.data.node_groups.new(name, "ShaderNodeTree")
@@ -207,7 +208,7 @@ def _architecture_surface(kind):
 
     color = nodes.new("ShaderNodeMixRGB")
     color.blend_type = "MULTIPLY"
-    color.inputs[0].default_value = 1.0
+    color.inputs[0].default_value = 1.0 if realistic else 0.28
     color.location = (390, 180)
     links.new(tint.outputs["Tint"], color.inputs[1])
     links.new(shade, color.inputs[2])
@@ -225,16 +226,32 @@ def _architecture_surface(kind):
     bump.inputs["Distance"].default_value = depth
     links.new(detail.outputs["Fac"], bump.inputs["Height"])
     links.new(bump.outputs["Normal"], output.inputs["Normal"])
+    if realistic:
+        group.interface.new_socket(
+            name="Roughness", in_out="OUTPUT", socket_type="NodeSocketFloat"
+        )
+        roughness = nodes.new("ShaderNodeMapRange")
+        roughness.location = (390, -310)
+        low, high = {
+            "timber": (0.36, 0.78),
+            "clay": (0.50, 0.87),
+            "plaster": (0.74, 0.97),
+            "stone": (0.59, 0.94),
+        }[kind]
+        roughness.inputs["To Min"].default_value = low
+        roughness.inputs["To Max"].default_value = high
+        links.new(detail.outputs["Fac"], roughness.inputs["Value"])
+        links.new(roughness.outputs["Result"], output.inputs["Roughness"])
     return group
 
 
-def configure_architecture_surface(material, shader, kind):
+def configure_architecture_surface(material, shader, kind, *, realistic=False):
     tree = material.node_tree
     surface = tree.nodes.new("ShaderNodeGroup")
     surface.name = "Architecture Surface"
     surface.label = f"{kind.title()} · Colour and Relief"
     surface.location = (shader.location.x - 240, shader.location.y)
-    surface.node_tree = _architecture_surface(kind)
+    surface.node_tree = _architecture_surface(kind, realistic)
     surface.inputs["Tint"].default_value = material.diffuse_color
     if kind == "timber":
         material["grain_aligned_uv"] = True
@@ -246,9 +263,37 @@ def configure_architecture_surface(material, shader, kind):
     }[kind]
     tree.links.new(surface.outputs["Color"], shader.inputs["Base Color"])
     tree.links.new(surface.outputs["Normal"], shader.inputs["Normal"])
+    if realistic:
+        tree.links.new(
+            surface.outputs["Roughness"], shader.inputs["Roughness"]
+        )
 
 
 def configure_surface_materials(materials, shader_for):
+    if bark := materials.get("bark"):
+        shader = shader_for(bark)
+        tree = bark.node_tree
+        coords = tree.nodes.new("ShaderNodeTexCoord")
+        scale = tree.nodes.new("ShaderNodeVectorMath")
+        scale.operation = "MULTIPLY"
+        scale.inputs[1].default_value = (29.0, 29.0, 3.2)
+        furrows = tree.nodes.new("ShaderNodeTexNoise")
+        furrows.inputs["Scale"].default_value = 1.0
+        furrows.inputs["Detail"].default_value = 2.8
+        tint = tree.nodes.new("ShaderNodeValToRGB")
+        tint.color_ramp.elements[0].color = (0.042, 0.028, 0.018, 1)
+        tint.color_ramp.elements[1].color = (0.25, 0.19, 0.13, 1)
+        bump = tree.nodes.new("ShaderNodeBump")
+        bump.inputs["Distance"].default_value = 0.014
+        for source, target in (
+            (coords.outputs["Object"], scale.inputs[0]),
+            (scale.outputs[0], furrows.inputs["Vector"]),
+            (furrows.outputs["Fac"], tint.inputs[0]),
+            (tint.outputs[0], shader.inputs["Base Color"]),
+            (furrows.outputs["Fac"], bump.inputs["Height"]),
+            (bump.outputs[0], shader.inputs["Normal"]),
+        ):
+            tree.links.new(source, target)
     meadow, bare = meadow_images()
     for key in ("terrain", "bare_terrain", "world_water"):
         material = materials[key]

@@ -12,17 +12,20 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 import settlement_blender as towns
+from art_style import preview_engine
 from civic_blender import add_tree, build_grass_meshes, ground_cast
 from civic_rules import grass_cells, grass_samples, meadow_growth
 from house_generator import MeshBatch, _linear_color
 from surface_blender import TerrainSkin, paint_land, set_edge_normals
 from surface_quality import SurfaceGradeError
+from terrain_detail import refine_slopes
 from terrain_rules import (
     ground_gradient,
     segment_projection,
     smoothstep,
     value_noise,
 )
+from tree_blender import TreeLibrary
 from world_landmarks import build_landmark
 from world_rules import (
     LandmarkGradeError,
@@ -157,6 +160,14 @@ def _macro_mesh(plan, materials):
                 triangles.extend(((a, b, d), (b, c, d)))
             else:
                 triangles.extend(((a, b, c), (a, c, d)))
+    if plan.config.art_style == "REALISTIC":
+        triangles, _ = refine_slopes(
+            vertices,
+            triangles,
+            [0] * len(triangles),
+            terrain.height,
+            plan.config.seed,
+        )
     mesh = bpy.data.meshes.new("World_Landscape")
     mesh.from_pydata(vertices, [], triangles)
     mesh.update()
@@ -438,6 +449,11 @@ def _trees(plan, project, collection, root, materials):
     batch = MeshBatch("World_Woodland", materials)
     trunks = MeshBatch("World_Tree_Trunks", materials)
     branches = MeshBatch("World_Tree_Branches", materials)
+    library = (
+        TreeLibrary(collection, root, materials, towns._finish, compact=True)
+        if plan.config.art_style == "REALISTIC"
+        else None
+    )
     grid, terrain = plan.grid, plan.terrain
     step = max(8.5, math.sqrt(math.prod(grid.size) / 24_000))
     nx, ny = (math.floor(size / step) for size in grid.size)
@@ -468,6 +484,7 @@ def _trees(plan, project, collection, root, materials):
                 material,
                 crowns,
                 broadleaf_chance=0.36,
+                library=library,
             )
     obj = towns._finish(batch, collection, root, "world_woodland")
     if obj:
@@ -560,7 +577,7 @@ def build_world(plan, *, scene=None):
     created = []
     materials = {}
     try:
-        materials = towns._materials(generation)
+        materials = towns._materials(generation, plan.config.art_style)
         sources, sites = [], []
         for i, initial in enumerate(plan.sites):
             occupied = (*sites, *plan.sites[i + 1 :])
@@ -803,7 +820,7 @@ def preview_world(collection, root, focus=None, *, meadow=False):
     scene = bpy.context.scene
     scene.camera = camera
     _preview_sky(scene)
-    scene.render.engine = "CYCLES"
+    scene.render.engine = preview_engine(config.get("art_style", "REALISTIC"))
     scene.cycles.samples, scene.cycles.use_denoising = 16, True
     scene.render.resolution_x, scene.render.resolution_y = 1600, 1150
     scene.render.resolution_percentage = 100

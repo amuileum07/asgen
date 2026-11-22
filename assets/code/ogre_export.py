@@ -398,6 +398,24 @@ def _world_metadata(root, out):
     return path.name
 
 
+def _store_geometry(out, sections, assets, atlas_tile):
+    payload = encode_mesh(sections)
+    digest = hashlib.sha256(payload).hexdigest()[:20]
+    stem = "meshes/mesh_" + digest
+    if stem not in assets:
+        (out / (stem + ".ogregeom")).write_bytes(payload)
+        if not atlas_tile:
+            write_mesh_xml(out / (stem + ".mesh.xml"), sections)
+        points = [v[:3] for s in sections for v in s.vertices]
+        assets[stem] = {
+            "vertices": sum(len(s.vertices) for s in sections),
+            "triangles": sum(len(s.indices) // 3 for s in sections),
+            "bounds_min": [min(p[i] for p in points) for i in range(3)],
+            "bounds_max": [max(p[i] for p in points) for i in range(3)],
+        }
+    return stem
+
+
 def _export_settlement(collection, root, directory):
     out = Path(directory).resolve()
     marker = out / ".procedural_asset_package"
@@ -420,48 +438,41 @@ def _export_settlement(collection, root, directory):
         return collision_lookup[key]
 
     for obj, world, depsgraph in _instances(collection):
+        chunk_size = obj.get("export_chunk_size")
+        if not chunk_size and (
+            obj.get("roads_integrated")
+            or obj.get("settlement_part") == "grass"
+        ):
+            chunk_size = 64
         mesh_key = (
             obj.data.as_pointer(),
+            chunk_size,
             obj.original.as_pointer() if obj.modifiers else 0,
             tuple(
                 s.material.as_pointer() if s.material else 0
                 for s in obj.material_slots
             ),
         )
-        mesh = obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+        collidable = obj.get("collision_enabled", True)
+        mesh = None
+        if mesh_key not in mesh_cache or (collidable and not atlas_tile):
+            mesh = obj.to_mesh(
+                preserve_all_data_layers=True, depsgraph=depsgraph
+            )
         try:
             if mesh_key not in mesh_cache:
                 sections = _sections(obj, mesh, registry)
-                chunk_size = obj.get("export_chunk_size")
-                mesh_cache[mesh_key] = (
-                    _chunks(sections, chunk_size or 64)
+                parts = (
+                    _chunks(sections, chunk_size)
                     if chunk_size
-                    or obj.get("roads_integrated")
-                    or obj.get("settlement_part") == "grass"
                     else [(sections, (0, 0, 0))]
                 )
+                mesh_cache[mesh_key] = [
+                    (_store_geometry(out, part, assets, atlas_tile), origin)
+                    for part, origin in parts
+                ]
             matrix = AXIS @ world @ AXIS.inverted()
-            for sections, origin in mesh_cache[mesh_key]:
-                payload = encode_mesh(sections)
-                digest = hashlib.sha256(payload).hexdigest()[:20]
-                stem = "meshes/mesh_" + digest
-                if stem not in assets:
-                    (out / (stem + ".ogregeom")).write_bytes(payload)
-                    if not atlas_tile:
-                        write_mesh_xml(out / (stem + ".mesh.xml"), sections)
-                    points = [v[:3] for s in sections for v in s.vertices]
-                    assets[stem] = {
-                        "vertices": sum(len(s.vertices) for s in sections),
-                        "triangles": sum(
-                            len(s.indices) // 3 for s in sections
-                        ),
-                        "bounds_min": [
-                            min(p[i] for p in points) for i in range(3)
-                        ],
-                        "bounds_max": [
-                            max(p[i] for p in points) for i in range(3)
-                        ],
-                    }
+            for stem, origin in mesh_cache[mesh_key]:
                 transform = matrix @ Matrix.Translation(origin)
                 position, rotation, scale = transform.decompose()
                 nodes.append(
@@ -477,7 +488,7 @@ def _export_settlement(collection, root, directory):
                 if atlas_tile and (effect := obj.get("atlas_effect")):
                     nodes[-1]["effect"] = effect
                     nodes[-1]["water_id"] = obj.get("water_id", "-")
-            if not obj.get("collision_enabled", True):
+            if not collidable:
                 continue
             collision_mesh = obj.original.data if atlas_tile else mesh
             collision_mesh.calc_loop_triangles()
@@ -492,7 +503,8 @@ def _export_settlement(collection, root, directory):
                     continue
                 collision_triangles.append(tuple(collision(p) for p in points))
         finally:
-            obj.to_mesh_clear()
+            if mesh is not None:
+                obj.to_mesh_clear()
     _write_materials(out, registry)
     write_scene(
         out / "settlement.scene", [n for n in nodes if "effect" not in n]

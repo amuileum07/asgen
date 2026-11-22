@@ -101,12 +101,15 @@ for material in {
         )
         assert shader.inputs["Base Color"].links[0].from_node == surface
         assert shader.inputs["Normal"].links[0].from_node == surface
+        assert (
+            material.node_tree.get_output_node("EEVEE").name == "Toon Output"
+        )
         finishes.add(surface.node_tree.name)
 assert finishes == {
-    "Asgen Plaster Surface",
-    "Asgen Timber Surface",
-    "Asgen Clay Surface",
-    "Asgen Stone Surface",
+    "Asgen Painted Plaster Surface",
+    "Asgen Painted Timber Surface",
+    "Asgen Painted Clay Surface",
+    "Asgen Painted Stone Surface",
 }
 timber = next(
     obj
@@ -238,6 +241,7 @@ root = generator._root_for(settings.target)
 collection = settings.target
 plan = generator.make_plan(HouseConfig(**json.loads(root["config_json"])))
 generator.create_preview_stage(plan, root)
+assert bpy.context.scene.render.engine == "BLENDER_EEVEE"
 stage_counts = (
     len(bpy.data.meshes),
     len(bpy.data.materials),
@@ -256,6 +260,56 @@ assert stage_counts == (
     len(bpy.data.worlds),
 )
 assert sentinel.name in bpy.data.objects
+
+
+def roof_tiles_in(collection):
+    return next(
+        obj.data
+        for obj in collection.objects
+        if obj.get("house_geometry_role") == "RoofTiles"
+    )
+
+
+cartoon_tiles = len(roof_tiles_in(collection).polygons)
+settings.art_style = "REALISTIC"
+assert bpy.ops.cartoon_house.generate() == {"FINISHED"}
+collection = settings.target
+root = generator._root_for(collection)
+assert json.loads(root["config_json"])["art_style"] == "REALISTIC"
+pan_tiles = roof_tiles_in(collection)
+assert len(pan_tiles.polygons) > cartoon_tiles
+edge_counts = {}
+for polygon in pan_tiles.polygons:
+    assert polygon.area > 1e-10
+    for edge in polygon.edge_keys:
+        edge_counts[edge] = edge_counts.get(edge, 0) + 1
+assert set(edge_counts.values()) == {2}, "Open or overlapping tile strips"
+generator.create_preview_stage(plan, root)
+assert bpy.context.scene.render.engine == "CYCLES"
+materials = {
+    mat
+    for obj in collection.objects
+    if obj.type == "MESH"
+    for mat in obj.data.materials
+}
+glass = next(mat for mat in materials if "_glass" in mat.name)
+assert (
+    generator._principled_shader(glass)
+    .inputs["Transmission Weight"]
+    .default_value
+    > 0.9
+)
+for mat in materials:
+    if mat.node_tree.nodes.get("Architecture Surface"):
+        shader = generator._principled_shader(mat)
+        assert shader.inputs["Roughness"].is_linked
+        assert (
+            mat.node_tree.get_output_node("CYCLES")
+            .inputs["Surface"]
+            .links[0]
+            .from_node
+            == shader
+        )
 for floors in (1, 2, 3):
     candidate = HouseConfig(
         width=8.2,

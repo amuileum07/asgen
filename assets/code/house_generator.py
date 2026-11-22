@@ -1,4 +1,4 @@
-"""Generate cartoon houses in Blender's Text Editor or command line.
+"""Generate procedural houses in Blender's Text Editor or command line.
 
 CLI usage: blender -b -P this_file.py -- --help.
 The layout module also runs with uv and ordinary Python.
@@ -23,10 +23,12 @@ if __name__ == "__main__":
         "interior_rules",
         "interior_blender",
         "game_materials",
+        "toon_preview",
     ):
         if module_name in sys.modules:
             importlib.reload(sys.modules[module_name])
 
+from art_style import ART_STYLES, STYLE_ITEMS, preview_engine  # noqa: E402
 from house_rules import (  # noqa: E402
     ARCHITECTURES,
     FOUNDATION_HEIGHT,
@@ -52,6 +54,8 @@ try:
 
     import interior_blender
     from game_materials import configure_architecture_surface
+    from roof_detail_blender import pan_tile, ridge_caps
+    from toon_preview import style_material
 except ModuleNotFoundError:
     bpy = None
     Vector = None
@@ -139,6 +143,7 @@ def _principled_shader(material):
 
 def _make_materials(config):
     colors = dict(COLORS[config.palette])
+    realistic = config.art_style == "REALISTIC"
     if config.architecture == "MEDIEVAL":
         medieval = {
             "WARM": ("e2cd9d", "a25e48"),
@@ -156,6 +161,13 @@ def _make_materials(config):
             foundation="87867b",
             glass="47646b",
         )
+        if realistic:
+            colors["roof"] = {
+                "WARM": "884b35",
+                "PASTEL": "697775",
+                "COASTAL": "526965",
+            }[config.palette]
+            colors.update(plaster="d7cfb7", wood="987650", frame="896d4b")
     specifications = dict(colors)
     specifications["mortar"] = (
         "dfcfb5" if config.wall_style == "BRICK" else colors["trim"]
@@ -195,9 +207,22 @@ def _make_materials(config):
         "brick": "clay",
         "cladding": "clay" if config.wall_style == "BRICK" else "timber",
     }
+    if realistic:
+        finishes.update(
+            floor="timber",
+            stairs="timber",
+            wardrobe="timber",
+            dining_table="timber",
+            desk="timber",
+            partition="plaster",
+            mortar="plaster" if config.wall_style == "BRICK" else "timber",
+        )
     materials = {}
     for key, color in specifications.items():
         brightness = 0.90 + 0.033 * int(key[-1]) if key[-1].isdigit() else 1.0
+        if key == "roof" and config.roof_tiles and config.roof_style != "FLAT":
+            # The gaps between raised tiles expose the darker bedding.
+            brightness = 0.70 if realistic else 0.63
         material = bpy.data.materials.new(f"CH_{config.palette}_{key}")
         material[OWNER_KEY] = OWNER
         material.diffuse_color = _linear_color(color, brightness)
@@ -209,10 +234,13 @@ def _make_materials(config):
         if key == "metal":
             shader.inputs["Metallic"].default_value = 0.65
             shader.inputs["Roughness"].default_value = 0.35
-        if config.architecture == "MEDIEVAL":
+        if config.architecture == "MEDIEVAL" or realistic:
             finish = finishes.get(key.rstrip("0123456789").rstrip("_"))
             if finish:
-                configure_architecture_surface(material, shader, finish)
+                configure_architecture_surface(
+                    material, shader, finish, realistic=realistic
+                )
+        style_material(material, shader, key, config.art_style)
         materials[key] = material
     return materials
 
@@ -580,6 +608,19 @@ def _build_opening(batch, wall, opening, config):
         "frame",
     )
     mid_x, mid_z = (x1 + x2) / 2, (z1 + z2) / 2
+    if config.art_style == "REALISTIC":
+        # Project the nose of the sill and cut a drip below its lip.
+        section = [
+            (0.16, -0.071),
+            (0.29, -0.071),
+            (0.31, -0.027),
+            (0.17, 0.009),
+        ]
+        start = [_wall_point(wall, x1 - 0.105, z1 + h, d) for d, h in section]
+        span = width + 0.21
+        batch.prism(
+            start, (wall.tangent[0] * span, wall.tangent[1] * span, 0), "frame"
+        )
     _wall_box(
         batch,
         wall,
@@ -626,15 +667,33 @@ def _build_opening(batch, wall, opening, config):
 
 def _build_roof(batches, plan, config, rng):
     seen_edges = set()
+    realistic = config.art_style == "REALISTIC"
+
+    def edge_key(a, b):
+        return tuple(sorted(tuple(round(c, 6) for c in p) for p in (a, b)))
+
+    ridges = set()
+    if realistic:
+        for face in plan.roof_faces:
+            points = [Vector(p) for p in face]
+            for a, b in zip(points, points[1:] + points[:1], strict=True):
+                key = edge_key(a, b)
+                if key in seen_edges:
+                    ridges.add(key)
+                seen_edges.add(key)
+        seen_edges.clear()
     for face in plan.roof_faces:
         points = [Vector(p) for p in face]
         normal = _face_normal(points)
         batches["Roof"].prism(points, -normal * 0.12, "roof")
         for a, b in zip(points, points[1:] + points[:1], strict=True):
-            key = tuple(sorted(tuple(round(c, 6) for c in p) for p in (a, b)))
+            key = edge_key(a, b)
             if key not in seen_edges:
                 seen_edges.add(key)
-                batches["RoofTrim"].beam(a, b, 0.14, "trim")
+                if key in ridges:
+                    ridge_caps(batches["RoofTrim"], a, b, "roof")
+                else:
+                    batches["RoofTrim"].beam(a, b, 0.14, "trim")
         if not config.roof_tiles or config.roof_style == "FLAT":
             continue
         origin = points[0]
@@ -669,13 +728,24 @@ def _build_roof(batches, plan, config, rng):
                     boundary,
                 )
                 if len(tile) >= 3 and polygon_area(tile) > 0.002:
+                    material = f"roof_{rng.randrange(7)}"
+                    if realistic:
+                        pan_tile(
+                            batches["RoofTiles"],
+                            tile,
+                            left,
+                            bottom,
+                            tile_w - gap,
+                            tile_h - gap,
+                            (origin, u, v, normal),
+                            material,
+                        )
+                        continue
                     world = [
                         origin + u * x + v * y + normal * 0.012
                         for x, y in tile
                     ]
-                    batches["RoofTiles"].prism(
-                        world, normal * 0.04, f"roof_{rng.randrange(7)}"
-                    )
+                    batches["RoofTiles"].prism(world, normal * 0.04, material)
 
 
 def _medieval_details(batches, house, config):
@@ -712,6 +782,19 @@ def _medieval_details(batches, house, config):
         for index in range(1, bays):
             u = wall.length * index / bays
             strip(wall, rectangle(u - 0.055, 0, u + 0.055, top))
+        if config.roof_style == "GABLE" and wall.name in ("Front", "Back"):
+            # The tie beam sits just proud of the studs at eaves level.
+            _wall_box(
+                timber,
+                wall,
+                0,
+                house.height - 0.07,
+                wall.length,
+                house.height + 0.07,
+                0.062,
+                0.082,
+                "trim",
+            )
         for floor in range(config.floors):
             bottom = floor * house.floor_height
             strip(
@@ -1026,6 +1109,8 @@ def create_preview_stage(plan, root, *, scene=None):
         if old.get(OWNER_KEY) == OWNER and old.get("is_preview_stage"):
             _remove_owned_collection(old)
     stage = bpy.data.collections.new("CartoonHouse_Preview")
+    saved = json.loads(root["config_json"])
+    art_style = saved.get("art_style", "REALISTIC")
     stage[OWNER_KEY] = OWNER
     stage["is_preview_stage"] = True
     scene.collection.children.link(stage)
@@ -1070,7 +1155,12 @@ def create_preview_stage(plan, root, *, scene=None):
     scene.camera = camera
     for name, position, energy, size in (
         ("Key", (-span * 0.7, -span, top + span), 2100, span * 0.85),
-        ("Fill", (span, -span * 0.25, top + span * 0.6), 1100, span),
+        (
+            "Fill",
+            (span, -span * 0.25, top + span * 0.6),
+            380 if art_style == "CARTOON" else 1100,
+            span,
+        ),
         ("Rim", (0, span, top + span * 0.8), 1800, span * 0.7),
     ):
         data = bpy.data.lights.new(f"CH_{name}", "AREA")
@@ -1106,7 +1196,7 @@ def create_preview_stage(plan, root, *, scene=None):
         )
     background.inputs["Color"].default_value = (0.70, 0.80, 1.0, 1.0)
     background.inputs["Strength"].default_value = 0.45
-    scene.render.engine = "CYCLES"
+    scene.render.engine = preview_engine(art_style)
     scene.cycles.device = "CPU"
     scene.cycles.samples = 32
     scene.cycles.use_denoising = True
@@ -1157,6 +1247,9 @@ UI_CLASSES = ()
 if bpy is not None:
 
     class CH_Settings(bpy.types.PropertyGroup):
+        art_style: bpy.props.EnumProperty(
+            name="표현 스타일", items=STYLE_ITEMS, default="CARTOON"
+        )
         target: bpy.props.PointerProperty(
             name="현재 집",
             type=bpy.types.Collection,
@@ -1248,7 +1341,7 @@ if bpy is not None:
             name="건축 양식",
             default="MEDIEVAL",
             items=[
-                ("SIMPLE", "기본 카툰", "간단한 외관"),
+                ("SIMPLE", "단순형", "간단한 외관"),
                 ("MEDIEVAL", "중세 목조", "목재 골조와 석재 기단, 굴뚝"),
             ],
         )
@@ -1352,6 +1445,7 @@ if bpy is not None:
             settings = getattr(context.scene, SETTINGS_KEY)
             layout.use_property_split = True
             layout.prop(settings, "target")
+            layout.prop(settings, "art_style")
             for names in (
                 ("seed", "detail_seed", "variation"),
                 ("width", "depth", "floors", "floor_height"),
@@ -1449,7 +1543,7 @@ def register():
 
 def _arguments(argv):
     parser = argparse.ArgumentParser(
-        description="Procedural cartoon houses for Blender"
+        description="Procedural houses for Blender"
     )
     parser.add_argument(
         "--config", type=Path, help="Optional JSON configuration"
@@ -1472,6 +1566,7 @@ def _arguments(argv):
         help="Render/show one cutaway floor (1-based)",
     )
     parser.add_argument("--wall-style", choices=WALL_STYLES)
+    parser.add_argument("--art-style", type=str.upper, choices=ART_STYLES)
     parser.add_argument("--roof-style", choices=ROOF_STYLES)
     parser.add_argument("--palette", choices=PALETTES)
     parser.add_argument("--architecture", choices=ARCHITECTURES)

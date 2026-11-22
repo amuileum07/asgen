@@ -14,6 +14,7 @@ from civic_rules import grass_sites, meadow_growth
 from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
 from terrain_rules import value_noise
+from tree_blender import tree_stem
 
 
 def _face(batch, points, material):
@@ -414,31 +415,6 @@ def ground_cast(mesh, bvh):
     return cast
 
 
-def _tree_stem(batch, points, radii, turn, sides):
-    axis = (points[-1] - points[0]).normalized()
-    horizontal = Vector((math.cos(turn), math.sin(turn), 0))
-    u = axis.cross(horizontal).normalized()
-    v = axis.cross(u)
-    first = len(batch.vertices)
-    for point, radius in zip(points, radii, strict=True):
-        for side in range(sides):
-            angle = side * math.tau / sides
-            offset = u * math.cos(angle) + v * math.sin(angle)
-            batch.vertices.append(tuple(point + radius * offset))
-    last = first + (len(points) - 1) * sides
-    faces = [
-        tuple(range(first + sides - 1, first - 1, -1)),
-        tuple(range(last, last + sides)),
-    ]
-    for a in range(first, last, sides):
-        for side in range(sides):
-            i = a + side
-            j = a + (side + 1) % sides
-            faces.append((i, j, j + sides, i + sides))
-    batch.faces.extend(faces)
-    batch.face_materials.extend([batch.material_indices["wood"]] * len(faces))
-
-
 def _leaf_cluster(batch, centre, radius, depth, turn, material, rng, rounded):
     first = len(batch.vertices)
     sides = 6
@@ -483,7 +459,16 @@ def _leaf_cluster(batch, centre, radius, depth, turn, material, rng, rounded):
 
 
 def add_tree(
-    crowns, trunks, branches, base, height, material, rng, *, broadleaf_chance
+    crowns,
+    trunks,
+    branches,
+    base,
+    height,
+    material,
+    rng,
+    *,
+    broadleaf_chance,
+    library=None,
 ):
     """Add a tapered trunk, branching limbs and an irregular crown."""
     turn = rng.uniform(0, math.tau)
@@ -492,6 +477,9 @@ def add_tree(
     detail = random.Random(rng.uniform(-80, 80))
     tier_jitter = [rng.uniform(-0.025, 0.025) for _ in range(3)]
     broadleaf = detail.random() < broadleaf_chance
+    if library is not None:
+        library.plant(base, height, turn, spread, broadleaf, detail, material)
+        return
     origin = Vector(base)
     up = Vector((0, 0, 1))
     bend = Vector((-lean.y, lean.x, 0)) * 0.46
@@ -502,7 +490,7 @@ def add_tree(
         )
 
     width = height * (0.050 if broadleaf else 0.038)
-    _tree_stem(
+    tree_stem(
         trunks,
         [stem(level) for level in (-0.04, 0.09, 0.39, 0.79)],
         [width * scale for scale in (1.12, 0.79, 0.62, 0.24)],
@@ -536,7 +524,7 @@ def add_tree(
         tip = stem(end) + direction * (height * reach * spread)
         if i < (4 if broadleaf else 3):
             elbow = base_point.lerp(tip, 0.53) - up * (height * 0.032)
-            _tree_stem(
+            tree_stem(
                 branches,
                 [base_point, elbow, tip],
                 [width * 0.43, width * 0.27, width * 0.085],

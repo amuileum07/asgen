@@ -148,6 +148,7 @@ def house(stage, site, lot):
     palette, wall, roof, pitch, overhang = HOUSING[site["biome"]]
     seed = lot["seed"] % 2_000_000_001
     config = HouseConfig(
+        art_style=stage.root["art_style"],
         seed=seed,
         detail_seed=(seed + 143) % 2_000_000_001,
         interior_seed=(seed + 861) % 2_000_000_001,
@@ -739,9 +740,16 @@ def _rooms(stage, uid, rooms, *, dungeon_kind=None, tower=False):
     return entrance
 
 
-def _gable(batch, bounds, z, rise, material):
+def _gable(batch, bounds, z, rise, material, *, realistic=False):
     x0, y0, x1, y1 = bounds
     mid = (x0 + x1) / 2
+    if realistic:
+        houses.ridge_caps(
+            batch,
+            (mid, y0 - 0.26, z + rise),
+            (mid, y1 + 0.26, z + rise),
+            material,
+        )
     for x in (x0 - 0.25, x1 + 0.25):
         batch.prism(
             (
@@ -761,12 +769,18 @@ def _gable(batch, bounds, z, rise, material):
         )
 
 
-def _dome(batch, centre, radius):
+def _dome(batch, centre, radius, *, realistic=False):
     """Open below, with a rounded shell over one continuous room."""
     x, y, z = centre
-    for i in range(24):
-        a, b = i * math.tau / 24, (i + 1) * math.tau / 24
-        for t, s in pairwise((0, 0.27, 0.52, 0.77, 1.02, 1.27, 1.556)):
+    sides = 48 if realistic else 24
+    latitudes = (
+        tuple(i * 1.556 / 12 for i in range(13))
+        if realistic
+        else (0, 0.27, 0.52, 0.77, 1.02, 1.27, 1.556)
+    )
+    for i in range(sides):
+        a, b = i * math.tau / sides, (i + 1) * math.tau / sides
+        for t, s in pairwise(latitudes):
 
             def point(u, v):
                 return (
@@ -787,6 +801,7 @@ def institution(stage, place):
     uid = place["id"]
     kind = place["kind"]
     rooms = facility_rooms(place)
+    realistic = stage.root["art_style"] == "REALISTIC"
     tower = kind == "MAGE_TOWER"
     entry = _rooms(stage, uid, rooms, tower=tower)
     x, y, z = place["centre"]
@@ -798,7 +813,12 @@ def institution(stage, place):
                 continue
             top = room["centre"][2] + room["height"]
             if kind == "FRIDAY_MOSQUE" and room["cell"] == (1, 1):
-                _dome(roofs, (*room["centre"][:2], top), 3.95)
+                _dome(
+                    roofs,
+                    (*room["centre"][:2], top),
+                    3.95,
+                    realistic=realistic,
+                )
             else:
                 _gable(
                     roofs,
@@ -806,6 +826,7 @@ def institution(stage, place):
                     top,
                     1.0,
                     "castle_roof",
+                    realistic=realistic,
                 )
         if kind == "FRIDAY_MOSQUE":
             stage.marker(
@@ -862,6 +883,7 @@ def institution(stage, place):
                 eave,
                 1.29,
                 "castle_roof",
+                realistic=realistic,
             )
             for i in range(3):
                 py = bottom + 3.1 + i * d / 3
@@ -901,6 +923,7 @@ def institution(stage, place):
             eave + 1.99,
             3.05,
             "castle_slate",
+            realistic=realistic,
         )
     else:
         top = max(r["centre"][2] + r["height"] for r in rooms)
@@ -910,6 +933,7 @@ def institution(stage, place):
             top,
             3.1 if tower or kind == "CATHEDRAL" else 1.6,
             "castle_slate" if tower or kind == "CATHEDRAL" else "castle_roof",
+            realistic=realistic,
         )
     stage.finish(roofs, "institution_roof")
     if kind in ("TRAINING_YARD", "ROYAL_HALL", "SAWMILL", "CISTERN"):
@@ -932,7 +956,10 @@ def castle(stage, place, landscape):
         keep_heading=0,
     )
     for name, batch in castle_batches(
-        hand, landscape, stage.materials
+        hand,
+        landscape,
+        stage.materials,
+        realistic=stage.root["art_style"] == "REALISTIC",
     ).items():
         stage.finish(batch, "castle_" + name)
     for batch, name, meta, location in interior_batches(

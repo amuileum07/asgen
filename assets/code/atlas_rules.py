@@ -9,6 +9,7 @@ from hashlib import blake2s
 from itertools import pairwise
 from pathlib import Path
 
+from art_style import validate_art_style
 from terrain_rules import (
     inside_polygon,
     segment_projection,
@@ -190,6 +191,9 @@ class Atlas:
         if blueprint.get("blueprint_version") != 2:
             raise ValueError("Expected blueprint_version 2")
         self.title = str(blueprint.get("title", "Procedural Atlas"))
+        self.art_style = validate_art_style(
+            blueprint.get("art_style", "CARTOON")
+        )
         self.size = tuple(blueprint.get("size_m", (4096, 4096)))
         if len(self.size) != 2 or any(
             type(n) is not int or n % TILE or not 2048 <= n <= 32768

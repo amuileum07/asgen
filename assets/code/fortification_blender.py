@@ -56,17 +56,38 @@ def cone(batch, centre, radius, height, material, vertices=12):
     )
 
 
-def _tower(batch, x, y, z, radius, height):
-    cylinder(batch, (x, y, z - 0.25), radius, height + 0.25, "stone")
+def _tower(batch, x, y, z, radius, height, realistic=False):
+    sides = 28 if realistic else 12
+    cylinder(batch, (x, y, z - 0.25), radius, height + 0.25, "stone", sides)
     cylinder(
-        batch, (x, y, z + height - 0.4), radius * 1.13, 0.45, "stone_light"
+        batch,
+        (x, y, z + height - 0.4),
+        radius * 1.13,
+        0.45,
+        "stone_light",
+        sides,
     )
+    if realistic:
+        for level, reach, depth in (
+            (0.12, 1.10, 0.42),
+            (0.77, 1.04, 0.12),
+            (0.88, 1.075, 0.17),
+        ):
+            cylinder(
+                batch,
+                (x, y, z + height * level),
+                radius * reach,
+                depth,
+                "stone",
+                sides,
+            )
     cone(
         batch,
         (x, y, z + height + 0.05),
         radius * 1.33,
         radius * 1.6,
         "castle_roof",
+        sides,
     )
 
 
@@ -82,6 +103,7 @@ def build_walls(
     decorate_gates=True,
     thickness=None,
     crenellations=True,
+    realistic=False,
 ):
     """Follow the boundary and leave gate passages open."""
     thickness = thickness or (1.3 if height < 5 else 1.8)
@@ -128,6 +150,25 @@ def build_walls(
                 ),
             ]
             batch.prism(top, (0, 0, -height - 0.45), "stone")
+            if realistic:
+                # Individual coping stones follow the grade of the wall.
+                for first, last in ((0.01, 0.49), (0.51, 0.99)):
+                    cap = []
+                    for t, side in (
+                        (first, 1),
+                        (last, 1),
+                        (last, -1),
+                        (first, -1),
+                    ):
+                        off = side * (thickness / 2 + 0.075)
+                        cap.append(
+                            (
+                                p[0] + t * (q[0] - p[0]) + nx * off,
+                                p[1] + t * (q[1] - p[1]) + ny * off,
+                                z1 + (z2 - z1) * t + height + 0.09,
+                            )
+                        )
+                    batch.prism(cap, (0, 0, -0.16), "stone_light")
             if crenellations and index % 2 == 0:
                 for side in (-1, 1):
                     batch.box(
@@ -152,6 +193,7 @@ def build_walls(
                     sampler.height(*centre),
                     thickness * 1.35,
                     height + 1.5,
+                    realistic,
                 )
                 next_tower = accumulated + tower_spacing
         accumulated += length
@@ -170,6 +212,7 @@ def build_walls(
                 z,
                 tower_radius,
                 height + 2.0,
+                realistic,
             )
         clearance = max(3.6, height - 0.8)
         batch.box(

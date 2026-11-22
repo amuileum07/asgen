@@ -13,6 +13,7 @@ from mathutils.bvhtree import BVHTree
 from mathutils.noise import noise
 
 import settlement_blender as towns
+from art_style import preview_engine
 from atlas_places import (
     Landscape,
     atlas_paths,
@@ -29,12 +30,14 @@ from atlas_structures import (
     institution,
     plaza,
 )
-from civic_blender import add_tree, build_grass_meshes
+from civic_blender import add_tree, build_grass_meshes, ground_cast
 from civic_rules import grass_cells, grass_samples
 from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
 from surface_blender import paint_land
+from terrain_detail import refine_slopes
 from terrain_rules import ground_gradient, segment_projection, smoothstep
+from tree_blender import TreeLibrary
 from world_blender import _clip_water, _preview_sky, _water_colour
 
 EARTH = {
@@ -97,6 +100,22 @@ def terrain_mesh(stage, atlas, land, cell, shafts, step):
             tris.extend(
                 ((a, a + 1, a + count + 1), (a, a + count + 1, a + count))
             )
+    if atlas.art_style == "REALISTIC" and step <= 4:
+
+        def natural(x, y):
+            return (
+                not land.district(x, y)
+                and not any(
+                    segment_projection((x, y), a, b)[0] < width / 2 + step
+                    for i in land.path_index.query((x, y), step + 12)
+                    for width, a, b in (land.paths[i],)
+                )
+                and not atlas.water_at(x, y)
+            )
+
+        tris, _ = refine_slopes(
+            points, tris, [0] * len(tris), height, atlas.seed, natural
+        )
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(points, [], tris)
     mesh.update()
@@ -113,7 +132,11 @@ def terrain_mesh(stage, atlas, land, cell, shafts, step):
 
     mesh.normals_split_custom_set_from_vertices(
         [
-            _seam_sample(normal, x, y, left, bottom).normalized()
+            (0, 0, 0)
+            if atlas.art_style == "REALISTIC"
+            and x not in (left, left + TILE)
+            and y not in (bottom, bottom + TILE)
+            else _seam_sample(normal, x, y, left, bottom).normalized()
             for x, y, _ in points
         ]
     )
@@ -256,17 +279,29 @@ def _roads(stage, atlas, land, cell, paths, ground):
     stage.finish(piers, "bridge_piers")
 
 
-def _stone(batch, x, y, z, width, rng):
+def _stone(batch, x, y, z, width, rng, *, realistic=False):
     angle = rng.random() * math.tau
     rings = []
     first = len(batch.vertices)
     bias = rng.uniform(-39, 39)
-    for layer, (height, scale) in enumerate(
-        ((-0.15, 0.79), (0.14, 1), (0.55, 0.58))
-    ):
+    sides = 14 if realistic else 8
+    profile = (
+        (
+            (-0.26, 0.73),
+            (0.02, 0.95),
+            (0.18, 1.0),
+            (0.25, 0.84),
+            (0.43, 0.78),
+            (0.54, 0.56),
+            (0.60, 0.28),
+        )
+        if realistic
+        else ((-0.15, 0.79), (0.14, 1), (0.55, 0.58))
+    )
+    for layer, (height, scale) in enumerate(profile):
         ring = []
-        for k in range(8):
-            yaw = angle + k * math.tau / 8
+        for k in range(sides):
+            yaw = angle + k * math.tau / sides
             u, v = math.cos(yaw), math.sin(yaw)
             t = noise(Vector((u * 2 + bias, v * 2, layer * 0.91)))
             ring.append(
@@ -278,16 +313,17 @@ def _stone(batch, x, y, z, width, rng):
             )
         rings.append(ring)
         batch.vertices.extend(ring)
-    faces = [tuple(reversed(range(8))), tuple(range(16, 24))]
-    for ring_start in (0, 8):
+    last = sides * (len(rings) - 1)
+    faces = [tuple(reversed(range(sides))), tuple(range(last, last + sides))]
+    for ring_start in range(0, last, sides):
         faces.extend(
             (
                 ring_start + i,
-                ring_start + (i + 1) % 8,
-                ring_start + (i + 1) % 8 + 8,
-                ring_start + i + 8,
+                ring_start + (i + 1) % sides,
+                ring_start + (i + 1) % sides + sides,
+                ring_start + i + sides,
             )
-            for i in range(8)
+            for i in range(sides)
         )
     batch.faces.extend(tuple(first + i for i in face) for face in faces)
     batch.face_materials.extend(
@@ -305,6 +341,7 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
     trunks = stage.batch(f"Trunks_{cell}")
     branches = stage.batch(f"Branches_{cell}")
     stone = stage.batch(f"Rocks_{cell}", 0.035)
+    cast = ground_cast(mesh, tree)
 
     def reserved(x, y):
         if any(contains(rect, x, y) for rect in shafts):
@@ -327,6 +364,10 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
         if atlas.water_at(x, y) or reserved(x, y):
             continue
         z = land.height(x, y)
+        if stage.trees:
+            hit = cast(x, y)[0]
+            if hit is not None:
+                z = hit.z
         climate = atlas.region_weights(x, y)[0][1]
         slope = math.hypot(*ground_gradient(land.height, x, y, 2.8))
         canopy = {
@@ -361,13 +402,22 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
                 "leaves",
                 rng,
                 broadleaf_chance=broadleaf,
+                library=stage.trees,
             )
             crown_weights.extend(
                 min(1.0, max(0.0, (p[2] - z) / height)) ** 1.6
                 for p in crowns.vertices[begin:]
             )
         elif i % 6 == 0 and slope < 1.4:
-            _stone(stone, x, y, z, rng.uniform(0.28, 1.8), rng)
+            _stone(
+                stone,
+                x,
+                y,
+                z,
+                rng.uniform(0.28, 1.8),
+                rng,
+                realistic=atlas.art_style == "REALISTIC",
+            )
     if crown := stage.finish(crowns, "world_woodland", effect="CROWN"):
         uv = crown.data.uv_layers.active.data
         for loop, item in zip(crown.data.loops, uv, strict=True):
@@ -557,8 +607,14 @@ def build_atlas(
     root = bpy.data.objects.new("Atlas_Tiles", None)
     collection.objects.link(root)
     towns._owned(root, uuid.uuid4().hex)
-    materials = towns._materials(root[towns.GENERATION_KEY])
+    root["art_style"] = atlas.art_style
+    materials = towns._materials(root[towns.GENERATION_KEY], atlas.art_style)
     stage = Buildings(collection, root, materials, game=game)
+    stage.trees = (
+        TreeLibrary(collection, root, materials, towns._finish, compact=game)
+        if atlas.art_style == "REALISTIC"
+        else None
+    )
     land = Landscape(atlas, plan)
     paths = atlas_paths(plan)
     for cell in sorted(cells.union(backdrop)):
@@ -723,7 +779,7 @@ def preview(
         math.radians(6),
     )
     _preview_sky(scene)
-    scene.render.engine = "CYCLES"
+    scene.render.engine = preview_engine(atlas.art_style)
     scene.cycles.samples = 16
     scene.render.resolution_x, scene.render.resolution_y = 1280, 840
     scene.render.resolution_percentage = 100

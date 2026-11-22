@@ -4,6 +4,8 @@ import math
 import random
 from dataclasses import asdict, dataclass
 
+from art_style import validate_art_style
+
 WALL_STYLES = ("BRICK", "WOOD_HORIZONTAL", "WOOD_VERTICAL", "PLASTER")
 ROOF_STYLES = ("GABLE", "HIP", "SHED", "FLAT")
 PALETTES = ("WARM", "PASTEL", "COASTAL")
@@ -44,8 +46,10 @@ class HouseConfig:
     furniture_catalog: str = ""
     architecture: str = "MEDIEVAL"
     door_open: bool = False
+    art_style: str = "CARTOON"
 
     def validate(self):
+        validate_art_style(self.art_style)
         ranges = {
             "width": (4.0, 16.0),
             "depth": (4.0, 16.0),
