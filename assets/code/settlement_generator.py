@@ -40,7 +40,12 @@ if __name__ == "__main__":
         if name in sys.modules:
             importlib.reload(sys.modules[name])
 
-from art_style import ART_STYLES, STYLE_ITEMS  # noqa: E402
+from art_style import (  # noqa: E402
+    ART_STYLES,
+    SEASON_ITEMS,
+    SEASONS,
+    STYLE_ITEMS,
+)
 from settlement_rules import PROFILES, SettlementConfig, make_settlement  # noqa: E402
 
 try:
@@ -231,6 +236,9 @@ if bpy is not None:
             name="잔디 밀도", default=0.55, min=0, max=1.5
         )
         civic: bpy.props.BoolProperty(name="우물·분수·가로등", default=True)
+        season: bpy.props.EnumProperty(
+            name="계절", default="SUMMER", items=list(SEASON_ITEMS)
+        )
 
     class SETTLEMENT_OT_generate(bpy.types.Operator):
         bl_idname = "settlement.generate"
@@ -401,6 +409,7 @@ if bpy is not None:
                 "max_buildings",
                 "detail",
                 "trees",
+                "season",
                 "grass",
                 "grass_density",
                 "civic",
@@ -473,6 +482,7 @@ def _arguments(argv):
     parser.add_argument("--config", type=Path)
     parser.add_argument("--scale", choices=tuple(PROFILES))
     parser.add_argument("--art-style", type=str.upper, choices=ART_STYLES)
+    parser.add_argument("--season", type=str.upper, choices=SEASONS)
     for name in ("seed", "terrain_seed", "max_buildings"):
         parser.add_argument("--" + name.replace("_", "-"), type=int)
     for name in (

@@ -40,6 +40,7 @@ class CastleArchitecture:
     gate_width: float
     entry: tuple
     floor_height: float
+    imperial: bool = False
 
     @property
     def height(self):
@@ -59,7 +60,7 @@ def castle_point(centre, heading, point):
     )
 
 
-def make_castle_architecture(seed, radius):
+def make_castle_architecture(seed, radius, *, imperial=False):
     """Cluster a donjon, palas, chapel and forewing inside a bailey."""
     if type(seed) is not int or seed < 0:
         raise ValueError("Castle seed must be a nonnegative integer")
@@ -67,12 +68,12 @@ def make_castle_architecture(seed, radius):
         isinstance(radius, bool)
         or not isinstance(radius, (int, float))
         or not math.isfinite(radius)
-        or not 9 <= radius <= 45
+        or not 9 <= radius <= 65
     ):
-        raise ValueError("Castle radius must be between 9 and 45 metres")
+        raise ValueError("Castle radius must be between 9 and 65 metres")
     rng = random.Random(f"{seed}:ridge-castle")
     scale = radius / 24
-    floor_height = max(3.2, rng.uniform(4.05, 4.35) * scale)
+    floor_height = max(3.2, rng.uniform(4.05, 4.35) * min(scale, 1.48))
     blocks = []
     for identifier, x, y, width, depth, _height, _roof, storeys, timber in (
         ("palas", -2.5, 3.8, 11.5, 12, 18, "GABLE", 4, True),
@@ -93,19 +94,35 @@ def make_castle_architecture(seed, radius):
             )
         )
     towers = []
-    for identifier, x, y, radius_, height in (
-        ("west_tower", -8.3, 7.8, 2.7, 23),
-        ("high_tower", 7.0, 10.3, 2.8, 28),
-        ("chapel_tower", 10.3, -2.8, 2.0, 17),
-        ("fore_tower", -11.5, -7.5, 2.2, 14),
-    ):
+    tower_specs = (
+        ("west_tower", -8.3, 7.8, 2.7, 25 if imperial else 23),
+        (
+            "high_tower",
+            7.0,
+            10.3,
+            2.9 if imperial else 2.8,
+            32 if imperial else 28,
+        ),
+        (
+            "chapel_tower",
+            10.3,
+            -2.8,
+            2.1 if imperial else 2.0,
+            19 if imperial else 17,
+        ),
+        ("fore_tower", -11.5, -7.5, 2.2, 16 if imperial else 14),
+    )
+    for identifier, x, y, radius_, height in tower_specs:
+        spire_mult = (
+            rng.uniform(2.55, 3.05) if imperial else rng.uniform(2.15, 2.55)
+        )
         towers.append(
             CastleTower(
                 identifier,
                 (x * scale, y * scale),
                 max(1.9, radius_ * scale),
                 max(2, round(height * scale / floor_height)) * floor_height,
-                radius_ * rng.uniform(2.15, 2.55) * scale,
+                radius_ * spire_mult * scale,
             )
         )
     towers = [
@@ -123,7 +140,7 @@ def make_castle_architecture(seed, radius):
                 ((3 + side * 4) * scale, 5.7 * scale),
                 1.15 * scale,
                 donjon.height - base,
-                3.2 * scale,
+                (3.9 if imperial else 3.2) * scale,
                 base,
                 "PYRAMID_8",
             )
@@ -151,8 +168,9 @@ def make_castle_architecture(seed, radius):
         tuple(outline),
         tuple(blocks),
         tuple(towers),
-        max(6.2, 6.4 * scale),
-        max(4.8, 5 * scale),
+        max(7.6 if imperial else 6.2, (7.0 if imperial else 6.4) * scale),
+        max(5.4 if imperial else 4.8, (5.2 if imperial else 5.0) * scale),
         (-1.0 * scale, -2.2 * scale, 0.12),
         floor_height,
+        imperial=imperial,
     )

@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
-from art_style import validate_art_style
+from art_style import validate_art_style, validate_season
 from castle_interior_rules import CastleInterior, make_castle_interior
 from castle_rules import (
     CastleArchitecture,
@@ -58,26 +58,26 @@ PROFILES = {
         "wall_height": 3.8,
     },
     "CITY": {
-        "radius": 120,
-        "buildings": 240,
+        "radius": 148,
+        "buildings": 310,
         "gates": 4,
-        "rings": (0.43, 0.73),
-        "alleys": 25,
+        "rings": (0.42, 0.72),
+        "alleys": 28,
         "markets": 2,
         "walls": True,
         "castle": True,
-        "wall_height": 5.2,
+        "wall_height": 5.8,
     },
     "CAPITAL": {
-        "radius": 175,
-        "buildings": 480,
+        "radius": 185,
+        "buildings": 460,
         "gates": 5,
-        "rings": (0.35, 0.59, 0.82),
+        "rings": (0.36, 0.60, 0.83),
         "alleys": 44,
         "markets": 3,
         "walls": True,
         "castle": True,
-        "wall_height": 6.3,
+        "wall_height": 7.2,
     },
 }
 
@@ -128,9 +128,11 @@ class SettlementConfig:
     grass_density: float = 0.55
     civic: bool = True
     art_style: str = "CARTOON"
+    season: str = "SUMMER"
 
     def validate(self):
         validate_art_style(self.art_style)
+        validate_season(self.season)
         if self.scale not in PROFILES:
             raise ValueError(f"scale must be one of {tuple(PROFILES)}")
         for name in ("seed", "terrain_seed", "max_buildings"):
@@ -412,20 +414,17 @@ def _templates(config, style):
 
 
 def _castle(config, boundary, terrain, market):
-    radius = (
-        34
-        if config.scale == "CAPITAL"
-        else 26
-        if config.scale == "CITY"
-        else 20
+    imperial = config.scale == "CAPITAL"
+    radius = 48 if imperial else 30 if config.scale == "CITY" else 20
+    radius = min(
+        radius, config.effective_radius * (0.30 if imperial else 0.27)
     )
-    radius = min(radius, config.effective_radius * 0.26)
     candidates = []
     for index in range(17):
         angle = math.pi * (0.18 + index * 0.64 / 16)
         x, y = (
-            config.effective_radius * 0.56 * math.cos(angle),
-            config.effective_radius * 0.56 * math.sin(angle),
+            config.effective_radius * 0.54 * math.cos(angle),
+            config.effective_radius * 0.54 * math.sin(angle),
         )
         if (
             inside_polygon((x, y), boundary)
@@ -445,7 +444,9 @@ def _castle(config, boundary, terrain, market):
     angle = math.atan2(market[1] - y, market[0] - x)
     outward = (math.cos(angle), math.sin(angle))
     heading = angle + math.pi / 2
-    architecture = make_castle_architecture(config.seed, radius)
+    architecture = make_castle_architecture(
+        config.seed, radius, imperial=imperial
+    )
     terrain = replace(
         terrain,
         castle_pad=(x, y, radius + 1, z),

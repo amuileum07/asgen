@@ -182,6 +182,7 @@ class SettlementTests(unittest.TestCase):
             {"radius": 10},
             {"max_buildings": -1},
             {"castle_site": "UNKNOWN"},
+            {"season": "MONSOON"},
         ):
             with self.assertRaises(ValueError):
                 make_settlement(SettlementConfig(**values))

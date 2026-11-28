@@ -192,7 +192,14 @@ def surface_mesh(plan, sampler, materials, *, skin=None):
                 x, y, sampler.height, plan.config.terrain_seed, materials, step
             )
 
-    paint_land(mesh, materials, codes, colour_at, origin)
+    paint_land(
+        mesh,
+        materials,
+        codes,
+        colour_at,
+        origin,
+        all_stone_roads=plan.config.scale == "CAPITAL",
+    )
     if seam:
         set_edge_normals(mesh, seam, skin.edge_normal)
     mesh["surface_vertices_shared"] = True
@@ -217,7 +224,9 @@ def meadow_colour(x, y, height, seed, materials, step):
     return colour, slope < 0.63
 
 
-def paint_land(mesh, materials, codes, colour_at, origin=(0, 0)):
+def paint_land(
+    mesh, materials, codes, colour_at, origin=(0, 0), *, all_stone_roads=False
+):
     for key in GROUND_KEYS:
         mesh.materials.append(materials[key])
     code_attribute = mesh.attributes.new("surface_kind", "INT", "FACE")
@@ -233,6 +242,9 @@ def paint_land(mesh, materials, codes, colour_at, origin=(0, 0)):
         if code == 0:
             meadow = sum(grassy[i] for i in poly.vertices) >= 2
             poly.material_index = 0 if meadow else 4
+        elif all_stone_roads:
+            # Capitals pave every street and alley in dressed stone.
+            poly.material_index = 3 if code >= 3 else 2
         else:
             poly.material_index = 3 if code == 4 else 2 if code >= 2 else 1
         poly.use_smooth = True

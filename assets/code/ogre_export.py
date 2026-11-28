@@ -273,9 +273,25 @@ def export_settlement(collection, root, directory):
 
 
 def _civic_metadata(collection, out):
-    markers, lights = [], []
+    markers, lights, cuttables = [], [], []
     for obj in sorted(collection.all_objects, key=lambda o: o.name):
         role = obj.get("settlement_part")
+        if obj.get("cuttable") and role in ("cuttable_grass", "world_crops"):
+            matrix = AXIS @ obj.matrix_world @ AXIS.inverted()
+            position, rotation, _ = matrix.decompose()
+            cuttables.append(
+                {
+                    "id": obj.name,
+                    "kind": role,
+                    "harvest_kind": obj.get("harvest_kind", "GRASS"),
+                    "gameplay_tag": obj.get("gameplay_tag", "cuttable_grass"),
+                    "stubble_height": float(
+                        obj.get("cut_stubble_height", 0.08)
+                    ),
+                    "position": tuple(position),
+                    "rotation": tuple(rotation),
+                }
+            )
         if role == "civic_anchor":
             matrix = AXIS @ obj.matrix_world @ AXIS.inverted()
             position, rotation, _ = matrix.decompose()
@@ -324,6 +340,7 @@ def _civic_metadata(collection, out):
                 "coordinate_space": "ogre_world_y_up",
                 "assets": markers,
                 "lights": lights,
+                "cuttable_objects": cuttables,
             },
             indent=2,
         ),

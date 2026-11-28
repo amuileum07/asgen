@@ -15,7 +15,11 @@ from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
 from terrain_rules import value_noise
 from tree_blender import tree_stem
-from world_nature_blender import build_bell_tower
+from world_nature_blender import (
+    build_bell_tower,
+    build_monument_statue,
+    build_training_ground,
+)
 
 
 def _face(batch, points, material):
@@ -298,7 +302,13 @@ def project_assets(plan, mesh):
     result = []
     for asset in plan.civic_assets:
         samples = [asset.position[:2]]
-        if asset.kind in ("WELL", "FOUNTAIN", "BELL_TOWER"):
+        if asset.kind in (
+            "WELL",
+            "FOUNTAIN",
+            "BELL_TOWER",
+            "TRAINING_GROUND",
+            "STATUE_ANCHOR",
+        ):
             samples += [
                 (
                     asset.position[0]
@@ -337,17 +347,20 @@ def build_civic(plan, collection, root, materials, finish, owned):
         marker["variant"] = asset.variant
         if asset.kind == "STATUE_ANCHOR":
             marker["engine_asset_anchor"] = True
-            marker.empty_display_type = "PLAIN_AXES"
-            volume = bpy.data.objects.new(asset.id + "_ReservedVolume", None)
-            collection.objects.link(volume)
-            owned(volume)
-            volume.parent = marker
-            volume.empty_display_type = "CUBE"
-            volume.empty_display_size = 1
-            volume.location.z = asset.size[2] / (2 * asset.scale)
-            volume.scale = tuple(v / (2 * asset.scale) for v in asset.size)
-            volume["settlement_part"] = "asset_reservation"
-            continue
+            if not asset.parameters.get("realistic"):
+                marker.empty_display_type = "PLAIN_AXES"
+                volume = bpy.data.objects.new(
+                    asset.id + "_ReservedVolume", None
+                )
+                collection.objects.link(volume)
+                owned(volume)
+                volume.parent = marker
+                volume.empty_display_type = "CUBE"
+                volume.empty_display_size = 1
+                volume.location.z = asset.size[2] / (2 * asset.scale)
+                volume.scale = tuple(v / (2 * asset.scale) for v in asset.size)
+                volume["settlement_part"] = "asset_reservation"
+                continue
         key = (
             asset.kind,
             asset.variant,
@@ -369,6 +382,14 @@ def build_civic(plan, collection, root, materials, finish, owned):
                     surface,
                     grand=asset.parameters.get("grand", False),
                 )
+            elif asset.kind == "STATUE_ANCHOR":
+                build_monument_statue(
+                    body,
+                    canopy,
+                    imperial=asset.parameters.get("imperial", False),
+                )
+            elif asset.kind == "TRAINING_GROUND":
+                build_training_ground(body, canopy, surface)
             else:
                 lights = _lamp(body, surface, asset.parameters)
             blocks = []
@@ -477,6 +498,7 @@ def add_tree(
     *,
     broadleaf_chance,
     library=None,
+    season=None,
 ):
     """Add a tapered trunk, branching limbs and an irregular crown."""
     turn = rng.uniform(0, math.tau)
@@ -486,7 +508,16 @@ def add_tree(
     tier_jitter = [rng.uniform(-0.025, 0.025) for _ in range(3)]
     broadleaf = detail.random() < broadleaf_chance
     if library is not None:
-        library.plant(base, height, turn, spread, broadleaf, detail, material)
+        library.plant(
+            base,
+            height,
+            turn,
+            spread,
+            broadleaf,
+            detail,
+            material,
+            season=season,
+        )
         return
     origin = Vector(base)
     up = Vector((0, 0, 1))
@@ -572,10 +603,11 @@ def build_grass(
     *,
     allowed=None,
     realistic=False,
+    season="SUMMER",
 ):
-    sites = grass_sites(plan)
+    sites = list(grass_sites(plan))
     if allowed is not None:
-        sites = (site for site in sites if allowed(*site[:2]))
+        sites = [site for site in sites if allowed(*site[:2])]
     root["grass_tufts"] = build_grass_meshes(
         sites,
         mesh,
@@ -586,7 +618,21 @@ def build_grass(
         materials,
         finish,
         realistic=realistic,
+        season=season,
     )
+    if realistic and sites:
+        build_cuttable_grass_clumps(
+            sites,
+            mesh,
+            bvh,
+            plan.config.seed,
+            collection,
+            root,
+            materials,
+            finish,
+            season=season,
+            max_clumps=160,
+        )
 
 
 class _GrassBatch:
@@ -779,6 +825,43 @@ def _add_wildflower(
         faces.append((c_bot, idx + 2, idx + 1, idx))
 
 
+def _season_grass_palette(realistic, season):
+    if season == "AUTUMN":
+        return (
+            Vector(_linear_color("706233")[:3]),
+            Vector(_linear_color("9a7936")[:3]),
+            Vector(_linear_color("b48c44")[:3]),
+            Vector(_linear_color("cfad63")[:3]),
+        )
+    if season == "WINTER":
+        return (
+            Vector(_linear_color("5e6656")[:3]),
+            Vector(_linear_color("7b7d6b")[:3]),
+            Vector(_linear_color("989b8d")[:3]),
+            Vector(_linear_color("b8beb7")[:3]),
+        )
+    if season == "SPRING":
+        return (
+            Vector(_linear_color("4e7c37")[:3]),
+            Vector(_linear_color("79a349")[:3]),
+            Vector(_linear_color("8eb858")[:3]),
+            Vector(_linear_color("bdd06e")[:3]),
+        )
+    if realistic:
+        return (
+            Vector(_linear_color("4c6d36")[:3]),
+            Vector(_linear_color("7c8b47")[:3]),
+            Vector(_linear_color("7d9254")[:3]),
+            Vector(_linear_color("b8ad66")[:3]),
+        )
+    return (
+        Vector(_linear_color("70994f")[:3]),
+        Vector(_linear_color("a1b75b")[:3]),
+        Vector(_linear_color("9dbc71")[:3]),
+        Vector(_linear_color("d1d58b")[:3]),
+    )
+
+
 def build_grass_meshes(
     sites,
     mesh,
@@ -792,6 +875,7 @@ def build_grass_meshes(
     chunk_size=32,
     simple=False,
     realistic=False,
+    season="SUMMER",
 ):
     rng = random.Random(f"{seed}:grass-mesh")
     batches, count = {}, 0
@@ -811,17 +895,9 @@ def build_grass_meshes(
         else _linear_color("789d57")[:3]
     )
     grass_mat = materials.get("grass_tuft") or materials["grass_blade_0"]
-
-    if realistic:
-        mid_cool = Vector(_linear_color("4e6f38")[:3])
-        mid_warm = Vector(_linear_color("7c8b47")[:3])
-        tip_cool = Vector(_linear_color("7d9254")[:3])
-        tip_warm = Vector(_linear_color("b4aa67")[:3])
-    else:
-        mid_cool = Vector(_linear_color("70994f")[:3])
-        mid_warm = Vector(_linear_color("a1b75b")[:3])
-        tip_cool = Vector(_linear_color("9dbc71")[:3])
-        tip_warm = Vector(_linear_color("d1d58b")[:3])
+    mid_cool, mid_warm, tip_cool, tip_warm = _season_grass_palette(
+        realistic, season
+    )
     flower_colors = (
         _linear_color("4ba7ff")[:3],
         _linear_color("f8f4e2")[:3],
@@ -850,13 +926,14 @@ def build_grass_meshes(
         wx, wy = x + world_offset.x, y + world_offset.y
         growth = meadow_growth(wx, wy, seed)
         root_vec = ground_vec.lerp(mid_cool, 0.18) * 0.94
-        mid_base = ground_vec.lerp(mid_cool.lerp(mid_warm, growth), 0.70)
-        tip_base = mid_base.lerp(tip_cool.lerp(tip_warm, growth), 0.72)
+        mid_base = ground_vec.lerp(mid_cool.lerp(mid_warm, growth), 0.72)
+        tip_base = mid_base.lerp(tip_cool.lerp(tip_warm, growth), 0.75)
         wind_angle = 0.63 + 0.48 * value_noise(wx / 17, wy / 17, seed + 77)
         wind_dir = Vector((math.cos(wind_angle), math.sin(wind_angle), 0))
         low = height < 0.33
+        tall = height >= 0.72
         if realistic and not simple:
-            count_blades = 6 if low else 10
+            count_blades = 7 if low else (14 if tall else 11)
         else:
             count_blades = (3 if low else 5) if simple else (4 if low else 8)
         for j in range(count_blades):
@@ -864,28 +941,29 @@ def build_grass_meshes(
                 angle + j * math.tau / count_blades + rng.uniform(-0.32, 0.32)
             )
             out = Vector((math.cos(theta), math.sin(theta), 0))
-            radius = rng.uniform(0.025, 0.25 if realistic else 0.22)
+            spread_r = 0.36 if tall else (0.28 if realistic else 0.22)
+            radius = rng.uniform(0.025, spread_r)
             dx, dy = out.x * radius, out.y * radius
             dz = -(dx * normal.x + dy * normal.y) / normal.z - 0.018
             base = Vector((point.x + dx, point.y + dy, point.z + dz))
-            is_short = j >= (5 if realistic else 4)
+            is_short = j >= (6 if tall else (5 if realistic else 4))
             if low:
-                h = height * rng.uniform(0.63, 1.20 if realistic else 1.14)
-                w = rng.uniform(0.016, 0.030)
+                h = height * rng.uniform(0.68, 1.24 if realistic else 1.14)
+                w = rng.uniform(0.018, 0.036 if realistic else 0.030)
                 segments = 2 if realistic else 1
             elif is_short:
-                h = height * rng.uniform(0.45, 0.86)
-                w = rng.uniform(0.011, 0.023)
+                h = height * rng.uniform(0.48, 0.88)
+                w = rng.uniform(0.014, 0.028)
                 segments = 2
             else:
-                h = height * rng.uniform(0.84, 1.32 if realistic else 1.18)
-                w = rng.uniform(0.011, 0.022)
+                h = height * rng.uniform(0.86, 1.36 if tall else 1.28)
+                w = rng.uniform(0.015, 0.032 if tall else 0.024)
                 segments = 3
-            mix_w = 0.36 if is_short else 0.65
+            mix_w = 0.36 if is_short else (0.72 if tall else 0.65)
             fwd = (wind_dir * mix_w + out * (1.0 - mix_w)).normalized()
             side = Vector((-fwd.y, fwd.x, 0))
-            lean = h * rng.uniform(0.07, 0.22)
-            curl = h * rng.uniform(0.14, 0.30)
+            lean = h * rng.uniform(0.08, 0.25 if tall else 0.22)
+            curl = h * rng.uniform(0.16, 0.36 if tall else 0.30)
             shade = rng.uniform(0.84, 1.14)
             tones = (
                 _clamp_rgb(root_vec * shade),
@@ -905,8 +983,13 @@ def build_grass_meshes(
                 (normal - fwd * 0.27).normalized(),
                 segments=segments,
             )
-        if growth > 0.55 and 0.29 < height < 0.70 and rng.random() < 0.04:
-            fdx, fdy = rng.uniform(-0.14, 0.14), rng.uniform(-0.14, 0.14)
+        if (
+            season != "WINTER"
+            and growth > 0.50
+            and 0.28 < height < 0.95
+            and rng.random() < (0.08 if season == "SPRING" else 0.045)
+        ):
+            fdx, fdy = rng.uniform(-0.16, 0.16), rng.uniform(-0.16, 0.16)
             fdz = -(fdx * normal.x + fdy * normal.y) / normal.z - 0.015
             _add_wildflower(
                 batch,
@@ -924,5 +1007,118 @@ def build_grass_meshes(
         if obj:
             obj["collision_enabled"] = False
             obj["cosmetic_only"] = True
+            obj["cuttable"] = True
+            obj["gameplay_tag"] = "grass_field"
+            obj["cut_stubble_height"] = 0.08
             obj["export_chunk_size"] = chunk_size
     return count
+
+
+def build_cuttable_grass_clumps(
+    sites,
+    mesh,
+    bvh,
+    seed,
+    collection,
+    root,
+    materials,
+    finish,
+    *,
+    season="SUMMER",
+    max_clumps=240,
+):
+    """Instantiate individual cuttable grass clump objects."""
+    rng = random.Random(f"{seed}:cuttable-grass")
+    cast = ground_cast(mesh, bvh)
+    meadow = list(mesh.materials).index(materials["terrain"])
+    material_indices = [p.material_index for p in mesh.polygons]
+    grass_mat = materials.get("grass_tuft") or materials["grass_blade_0"]
+    mid_cool, mid_warm, tip_cool, tip_warm = _season_grass_palette(
+        True, season
+    )
+
+    # Build 3 shared cuttable clump prototypes (medium, lush, tall).
+    prototypes = []
+    for idx, (base_h, blades, spread) in enumerate(
+        ((0.62, 11, 0.34), (0.86, 13, 0.40), (1.16, 15, 0.46))
+    ):
+        batch = _GrassBatch(f"CuttableGrassProto_{idx}", grass_mat)
+        prng = random.Random(f"{seed}:cuttable-proto:{idx}")
+        for j in range(blades):
+            theta = j * math.tau / blades + prng.uniform(-0.25, 0.25)
+            out = Vector((math.cos(theta), math.sin(theta), 0))
+            r = prng.uniform(0.03, spread)
+            base = Vector((out.x * r, out.y * r, -0.02))
+            side = Vector((-out.y, out.x, 0))
+            h = base_h * prng.uniform(0.76, 1.18)
+            w = prng.uniform(0.020, 0.036)
+            shade = prng.uniform(0.86, 1.12)
+            tones = (
+                _clamp_rgb(mid_cool * 0.80 * shade),
+                _clamp_rgb(mid_cool.lerp(mid_warm, 0.55) * shade),
+                _clamp_rgb(tip_cool.lerp(tip_warm, 0.65) * shade),
+            )
+            _add_blade(
+                batch,
+                base,
+                out,
+                side,
+                w,
+                h,
+                h * 0.16,
+                h * 0.28,
+                tones,
+                Vector((0, 0, 1)),
+                segments=3,
+            )
+        proto_obj = finish(batch, collection, root, "cuttable_grass")
+        if proto_obj is not None:
+            proto_mesh = proto_obj.data
+            bpy.data.objects.remove(proto_obj, do_unlink=True)
+            prototypes.append((proto_mesh, base_h >= 0.85))
+    if not prototypes:
+        return 0
+
+    candidates = [s for s in sites if s[2] >= 0.30]
+    if not candidates:
+        candidates = list(sites)
+    rng.shuffle(candidates)
+    placed = []
+    min_sep = 2.6
+    for x, y, height, angle in candidates:
+        if len(placed) >= max_clumps:
+            break
+        if any(math.hypot(x - px, y - py) < min_sep for px, py in placed):
+            continue
+        point, normal, face, _ = cast(x, y)
+        if (
+            point is None
+            or normal.z < 0.86
+            or material_indices[face] != meadow
+        ):
+            continue
+        idx = 2 if height >= 0.78 else (1 if height >= 0.48 else 0)
+        proto_mesh, is_tall = prototypes[idx]
+        obj = bpy.data.objects.new(
+            f"CuttableGrass_{len(placed):04d}", proto_mesh
+        )
+        collection.objects.link(obj)
+        obj.parent = root
+        for owner_k in ("_settlement_owner", "_settlement_generation"):
+            if owner_k in root:
+                obj[owner_k] = root[owner_k]
+        obj.location = point
+        obj.rotation_euler.z = angle
+        s = rng.uniform(0.88, 1.18)
+        obj.scale = (s, s, s)
+        obj["settlement_part"] = "cuttable_grass"
+        obj["collision_enabled"] = False
+        obj["cuttable"] = True
+        obj["gameplay_tag"] = "cuttable_grass"
+        obj["harvest_kind"] = "TALL_GRASS" if is_tall else "GRASS"
+        obj["cut_stubble_height"] = 0.08
+        placed.append((x, y))
+    for proto_mesh, _ in prototypes:
+        if proto_mesh.users == 0:
+            bpy.data.meshes.remove(proto_mesh)
+    return len(placed)

@@ -122,6 +122,18 @@ def _materials(generation, art_style):
         "cloth_blue": "70999c",
         "leaves": "69865b",
         "leaves_light": "8e9e63",
+        "leaves_autumn_red": "a83624",
+        "leaves_autumn_orange": "c86422",
+        "leaves_autumn_gold": "d49a2a",
+        "leaves_blossom": "e8b9c6",
+        "leaves_winter": "36493e",
+        "soil_furrow": "4b3928",
+        "wheat_gold": "cba349",
+        "crop_green": "4c7634",
+        "hay_gold": "c8a34d",
+        "bronze_statue": "6d5d3f",
+        "marble_white": "dedad0",
+        "arena_sand": "cbb183",
         "grass_blade_0": "55783b",
         "grass_blade_1": "728f44",
         "grass_blade_2": "94a856",
@@ -154,6 +166,18 @@ def _materials(generation, art_style):
             leaves="4f6a3f",
             leaves_light="748a4c",
             leaves_shadow="314626",
+            leaves_autumn_red="982e1e",
+            leaves_autumn_orange="bc581c",
+            leaves_autumn_gold="c98f26",
+            leaves_blossom="e2b2c0",
+            leaves_winter="2c3e35",
+            soil_furrow="3d2d1e",
+            wheat_gold="bd953e",
+            crop_green="3f682b",
+            hay_gold="bb9642",
+            bronze_statue="5d5034",
+            marble_white="d5d1c6",
+            arena_sand="bfa374",
             rock="62655b",
             rock_light="787a6e",
             stone="7d7c73",
@@ -180,6 +204,10 @@ def _materials(generation, art_style):
             stair_wood="timber",
             iron="metal",
             metal="metal",
+            bronze_statue="metal",
+            marble_white="stone",
+            soil_furrow="rock",
+            arena_sand="clay",
             cloth_red="fabric",
             cloth_cream="fabric",
             cloth_blue="fabric",
@@ -212,12 +240,14 @@ def _materials(generation, art_style):
         if realistic and key.startswith("leaves"):
             material["foliage_bend_uv"] = "V"
             configure_realistic_foliage(material, shader)
-        if key == "iron" or (realistic and key == "metal"):
+        if key in ("iron", "bronze_statue") or (realistic and key == "metal"):
             shader.inputs["Metallic"].default_value = (
                 0.86 if realistic else 0.65
             )
             shader.inputs["Roughness"].default_value = (
-                0.35 if realistic else 0.40
+                0.32
+                if key == "bronze_statue"
+                else (0.35 if realistic else 0.40)
             )
         finish = finishes.get(key)
         if finish:
@@ -322,12 +352,15 @@ def _shops_and_markets(plan, collection, root, materials):
     for market in plan.markets:
         x, y, z = market.centre
         # Paving is part of the shared terrain/road surface.
-        for i in range(4 if plan.config.scale == "VILLAGE" else 7):
-            angle = (
-                (i + 0.5)
-                * math.tau
-                / (4 if plan.config.scale == "VILLAGE" else 7)
-            )
+        booth_count = (
+            10
+            if plan.config.scale == "CAPITAL"
+            else 7
+            if plan.config.scale in ("TOWN", "CITY")
+            else 4
+        )
+        for i in range(booth_count):
+            angle = (i + 0.5) * math.tau / booth_count
             sx = x + market.radius * 0.68 * math.cos(angle)
             sy = y + market.radius * 0.68 * math.sin(angle)
             if any(
@@ -425,7 +458,14 @@ def _trees(plan, sampler, collection, root, materials, ground=None, cast=None):
     trunks = houses.MeshBatch("Settlement_Trunks", materials)
     branches = houses.MeshBatch("Settlement_Branches", materials)
     library = (
-        TreeLibrary(collection, root, materials, _finish, town=True)
+        TreeLibrary(
+            collection,
+            root,
+            materials,
+            _finish,
+            town=True,
+            season=plan.config.season,
+        )
         if plan.config.art_style == "REALISTIC"
         else None
     )
@@ -734,6 +774,7 @@ def build_settlement(
             _finish,
             allowed=skin.grass_allowed if skin else None,
             realistic=config.art_style == "REALISTIC",
+            season=config.season,
         )
         for poi in plan.navigation["points_of_interest"]:
             if poi["kind"] == "BUILDING_ENTRY":

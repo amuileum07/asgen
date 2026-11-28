@@ -14,9 +14,11 @@ from terrain_rules import (
 REGION_KINDS = (
     "MOUNTAIN",
     "MOUNTAIN_RANGE",
+    "PLATEAU",
     "HILLS",
     "VALLEY",
     "PLAIN",
+    "FOREST",
     "MARSH",
     "DESERT",
     "CANYON",
@@ -324,6 +326,7 @@ class WorldTerrain:
             if target is None and region.kind in (
                 "MOUNTAIN",
                 "MOUNTAIN_RANGE",
+                "PLATEAU",
                 "HILLS",
             ):
                 target = region.max_elevation
@@ -367,6 +370,20 @@ class WorldTerrain:
                 fade = (spine * ends) ** (0.98 + 0.62 * (1 - sculpt))
                 target = target * peaks + 18 * (sculpt - 0.48) * smoothstep(
                     0, 0.30, distance
+                )
+            elif region.kind == "PLATEAU":
+                # Elevated highland tableland with rocky escarpments.
+                rim_noise = value_noise(x / 52, y / 52, seed + 757) * 0.11
+                escarp = smoothstep(0.06, 0.34, 1 - distance + rim_noise)
+                # Subtle stepped rock bench along the cliff shoulder.
+                fade = (escarp * 2.0 - math.sin(escarp * math.tau) * 0.09) / 2
+                roll = value_noise(x / 84, y / 84, seed + 773) * 4.2
+                target += roll + 1.6 * noise
+            elif region.kind == "FOREST":
+                # Gently undulating rich woodland floor.
+                fade = smoothstep(0, 1, min(1.0, (1 - distance) * 1.25))
+                target += 3.8 * noise + 1.4 * value_noise(
+                    x / 32, y / 32, seed + 787
                 )
             elif region.kind == "HILLS":
                 fade = fade**0.72

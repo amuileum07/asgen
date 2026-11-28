@@ -13,7 +13,12 @@ from mathutils.bvhtree import BVHTree
 
 import settlement_blender as towns
 from art_style import preview_engine
-from civic_blender import add_tree, build_grass_meshes, ground_cast
+from civic_blender import (
+    add_tree,
+    build_cuttable_grass_clumps,
+    build_grass_meshes,
+    ground_cast,
+)
 from civic_rules import grass_cells, grass_samples, meadow_growth
 from house_generator import MeshBatch, _linear_color
 from realistic_materials import (
@@ -35,6 +40,7 @@ from world_nature_blender import (
     add_cave_mouth,
     add_crag_boulder,
     add_reed_clump,
+    build_farmland_patch,
 )
 from world_rules import (
     LandmarkGradeError,
@@ -115,7 +121,13 @@ def _colour(terrain, x, y, height=None):
     rgb = _mix(rgb, PALETTE["snow"], snowy * (1 - cliff_shed * 0.68))
     grassy = snowy < 0.32 and slope < 0.63
     for region in config.regions:
-        if region.kind not in ("DESERT", "CANYON", "MARSH"):
+        if region.kind not in (
+            "DESERT",
+            "CANYON",
+            "MARSH",
+            "PLATEAU",
+            "FOREST",
+        ):
             continue
         dist = region.distance(x, y)
         if dist >= 1.15:
@@ -144,6 +156,27 @@ def _colour(terrain, x, y, height=None):
                 smoothstep(-0.5, 0.5, noise),
             )
             rgb = _mix(rgb, bog_c, w * 0.88)
+        elif region.kind == "PLATEAU":
+            steppe = _mix(
+                PALETTE["highland_heather"],
+                PALETTE["meadow"],
+                smoothstep(-0.4, 0.6, noise),
+            )
+            rgb = _mix(rgb, steppe, w * (1 - rock * 0.65) * 0.72)
+        elif region.kind == "FOREST":
+            humus = _mix(
+                PALETTE["forest_moss"],
+                PALETTE["marsh_peat"],
+                smoothstep(0.0, 0.7, -noise),
+            )
+            rgb = _mix(rgb, humus, w * 0.58)
+    season = getattr(config, "season", "SUMMER")
+    if season == "AUTUMN" and grassy:
+        autumn_tint = _mix(PALETTE["meadow"], PALETTE["canyon_strata"], 0.32)
+        rgb = _mix(rgb, autumn_tint, 0.38 * smoothstep(-0.3, 0.7, noise))
+    elif season == "WINTER":
+        frost = smoothstep(22, config.snowline - 15, level + fleck * 18)
+        rgb = _mix(rgb, PALETTE["snow"], frost * (0.58 - rock * 0.35))
     waters = terrain.water_near(x, y)
     if waters:
         water = min(waters, key=lambda w: w.distance)
@@ -460,6 +493,7 @@ def _meadow_fields(plan, cast, mesh, material, allowed):
 def _world_grass(plan, fields, allowed):
     density = plan.config.grass_density
     seed = plan.config.seed
+    realistic = plan.config.art_style == "REALISTIC"
     half_x, half_y = (v / 2 for v in plan.grid.size)
 
     def valid(x, y):
@@ -470,18 +504,74 @@ def _world_grass(plan, fields, allowed):
             and allowed(x, y)
         )
 
+    def plain_or_plateau(x, y):
+        return any(
+            r.kind in ("PLAIN", "PLATEAU", "VALLEY")
+            and r.distance(x, y) < 0.96
+            for r in plan.config.regions
+        )
+
     rx, ry = MEADOW_RADII
-    spacing = max(9.0, math.sqrt(math.prod(plan.grid.size) / 12_000))
+    base_div = 62_000 if realistic else 12_000
+    spacing = max(
+        3.2 if realistic else 9.0,
+        math.sqrt(math.prod(plan.grid.size) / base_div),
+    )
     spacing /= math.sqrt(density)
     land = grass_cells((-half_x, -half_y, half_x, half_y), spacing)
     for x, y, growth, angle, chance in grass_samples(land, spacing, seed):
-        if chance < 0.52 + growth * 0.3 and valid(x, y):
-            yield x, y, 0.15 + growth * 0.15, angle
+        if chance < (0.82 if realistic else 0.52) + growth * 0.17 and valid(
+            x, y
+        ):
+            tall_zone = realistic and plain_or_plateau(x, y)
+            # Tall swaying prairie grass across plains and plateaus.
+            h = (
+                (0.54 + growth * 0.82)
+                if (tall_zone and growth > 0.36)
+                else (0.26 + growth * 0.30)
+            )
+            yield x, y, h, angle
+
+    # Dense tall-grass prairie patches inside PLAIN and PLATEAU regions.
+    if realistic:
+        for region in plan.config.regions:
+            if region.kind not in ("PLAIN", "PLATEAU"):
+                continue
+            prx, pry = min(region.radii[0], 180.0), min(region.radii[1], 160.0)
+            p_step = max(2.2, math.sqrt(prx * pry * 4 / 7_500)) / math.sqrt(
+                density
+            )
+            p_cells = grass_cells(
+                (
+                    region.centre[0] - prx,
+                    region.centre[1] - pry,
+                    region.centre[0] + prx,
+                    region.centre[1] + pry,
+                ),
+                p_step,
+            )
+            for x, y, growth, angle, chance in grass_samples(
+                p_cells, p_step, seed + 313
+            ):
+                if region.distance(x, y) >= 0.94 or not valid(x, y):
+                    continue
+                wave = value_noise(x / 36, y / 36, seed + 641)
+                if chance < 0.62 + wave * 0.34:
+                    tall_h = (
+                        0.72 + growth * 0.56
+                        if wave > -0.05
+                        else 0.30 + growth * 0.26
+                    )
+                    yield x, y, tall_h, angle
 
     area = len(fields) * rx * ry * 4
-    detail = max(0.41, math.sqrt(area / 68_000)) / math.sqrt(density)
-    outer_radius = 2.47
-    shoulder = max(0.84, math.sqrt(area * outer_radius**2 / 148_000))
+    detail = max(0.36 if realistic else 0.41, math.sqrt(area / 68_000))
+    detail /= math.sqrt(density)
+    outer_radius = 2.55 if realistic else 2.47
+    shoulder = max(
+        0.72 if realistic else 0.84,
+        math.sqrt(area * outer_radius**2 / 148_000),
+    )
     shoulder /= math.sqrt(density)
     planted = set()
     for (cx, cy, _), _, _ in fields:
@@ -497,7 +587,7 @@ def _world_grass(plan, fields, allowed):
             cover *= 1 - smoothstep(1.24, outer_radius, radius)
             if chance < cover and (x, y) not in planted and valid(x, y):
                 planted.add((x, y))
-                yield x, y, 0.21 + growth * 0.11, angle
+                yield x, y, 0.26 + growth * 0.24, angle
 
         inner = grass_cells(
             (cx - rx * 1.15, cy - ry * 1.15, cx + rx * 1.15, cy + ry * 1.15),
@@ -506,62 +596,107 @@ def _world_grass(plan, fields, allowed):
         for x, y, growth, angle, chance in grass_samples(inner, detail, seed):
             radius = math.hypot((x - cx) / rx, (y - cy) / ry)
             radius += (0.5 - growth) * 0.23
-            cover = (0.81 + growth * 0.18) * (
+            cover = (0.85 + growth * 0.14) * (
                 1 - smoothstep(0.63, 1.13, radius)
             )
             if chance < cover and valid(x, y):
                 edge = 1 - smoothstep(0.54, 1.12, radius)
-                yield x, y, 0.22 + edge * (0.32 + growth * 0.41), angle
+                yield x, y, 0.28 + edge * (0.42 + growth * 0.56), angle
 
 
-def _trees(plan, project, collection, root, materials):
-    """Place woodland between the shoreline and high ridges."""
+def _trees(plan, project, collection, root, materials, *, farm_zones=()):
+    """Place dense natural forests and groves across suitable biomes."""
     rng = random.Random(f"{plan.config.seed}:world-woods")
     crowns = random.Random(f"{plan.config.seed}:world-crowns")
     batch = MeshBatch("World_Woodland", materials)
     trunks = MeshBatch("World_Tree_Trunks", materials)
     branches = MeshBatch("World_Tree_Branches", materials)
+    realistic = plan.config.art_style == "REALISTIC"
+    season = getattr(plan.config, "season", "SUMMER")
     library = (
-        TreeLibrary(collection, root, materials, towns._finish, compact=True)
-        if plan.config.art_style == "REALISTIC"
+        TreeLibrary(
+            collection,
+            root,
+            materials,
+            towns._finish,
+            compact=True,
+            season=season,
+        )
+        if realistic
         else None
     )
     grid, terrain = plan.grid, plan.terrain
-    step = max(8.5, math.sqrt(math.prod(grid.size) / 24_000))
+    step = max(
+        6.4 if realistic else 8.5,
+        math.sqrt(math.prod(grid.size) / (46_000 if realistic else 24_000)),
+    )
     nx, ny = (math.floor(size / step) for size in grid.size)
     for i in range(nx):
         for j in range(ny):
-            x = (i + rng.uniform(0.19, 0.81)) * step - grid.size[0] / 2
-            y = (j + rng.uniform(0.19, 0.81)) * step - grid.size[1] / 2
-            noise = value_noise(x / 67, y / 67, plan.config.seed + 564)
-            if noise < 0.02 or rng.random() > noise + 0.18:
-                continue
-            if not _outside_settlements(plan, x, y) or terrain.wet(x, y, 9):
+            x = (i + rng.uniform(0.14, 0.86)) * step - grid.size[0] / 2
+            y = (j + rng.uniform(0.14, 0.86)) * step - grid.size[1] / 2
+            if not _outside_settlements(plan, x, y) or terrain.wet(x, y, 8):
                 continue
             if any(
-                r.kind in ("DESERT", "CANYON") and r.distance(x, y) < 0.92
-                for r in plan.config.regions
+                math.hypot(x - fx, y - fy) < max(fw, fd) * 0.75 + 4.5
+                for fx, fy, fw, fd in farm_zones
             ):
                 continue
+            in_forest, in_open = False, False
+            blocked = False
+            for r in plan.config.regions:
+                d = r.distance(x, y)
+                if r.kind in ("DESERT", "CANYON") and d < 0.92:
+                    blocked = True
+                    break
+                if r.kind == "FOREST" and d < 0.96:
+                    in_forest = True
+                elif r.kind in ("PLAIN", "PLATEAU") and d < 0.92:
+                    in_open = True
+            if blocked:
+                continue
+            macro = value_noise(x / 115, y / 115, plan.config.seed + 564)
+            grove = value_noise(x / 34, y / 34, plan.config.seed + 719)
+            density_score = macro * 0.65 + grove * 0.35
+            if in_forest:
+                # Dense multi-story woodland with small sunlit glades.
+                if density_score < -0.45 or rng.random() > 0.78 + grove * 0.2:
+                    continue
+            elif in_open:
+                # Open great plains and plateaus keep wide grass vistas.
+                if density_score < 0.42 or rng.random() > 0.22:
+                    continue
+            else:
+                # Natural clustered forest groves separated by meadows.
+                if density_score < 0.06 or rng.random() > density_score + 0.38:
+                    continue
             hit, normal, *_ = project(x, y)
             if (
                 hit is None
-                or normal.z < 0.81
-                or hit.z > plan.config.snowline - 15
+                or normal.z < 0.79
+                or hit.z > plan.config.snowline - 12
             ):
                 continue
-            height = rng.uniform(4.5, 8.3)
+            canopy_scale = (
+                rng.uniform(5.2, 11.2) if in_forest else rng.uniform(4.4, 8.8)
+            )
             material = "leaves_light" if crowns.random() < 0.35 else "leaves"
+            alpine_conifer = (
+                0.14
+                if hit.z > plan.config.snowline * 0.58
+                else (0.56 if in_forest else 0.42)
+            )
             add_tree(
                 batch,
                 trunks,
                 branches,
                 (x, y, hit.z),
-                height,
+                canopy_scale,
                 material,
                 crowns,
-                broadleaf_chance=0.36,
+                broadleaf_chance=alpine_conifer,
                 library=library,
+                season=season,
             )
     obj = towns._finish(batch, collection, root, "world_woodland")
     if obj:
@@ -575,6 +710,105 @@ def _trees(plan, project, collection, root, materials):
     ):
         limbs["collision_enabled"] = False
         limbs["export_chunk_size"] = 128
+
+
+def _world_farmlands(plan, project, collection, root, materials):
+    """Place fenced medieval crop fields on gentle ground near towns."""
+    if plan.config.art_style != "REALISTIC":
+        return
+    rng = random.Random(f"{plan.config.seed}:world-farmlands")
+    soil = MeshBatch("World_Farmland", materials, 0.015)
+    crops = MeshBatch("World_Crops", materials)
+    terrain = plan.terrain
+    half_x, half_y = (v / 2 - 28 for v in plan.grid.size)
+    season = getattr(plan.config, "season", "SUMMER")
+    placed = []
+    for site in plan.sites:
+        cx, cy = site.centre
+        base_r = site.settlement.config.effective_radius + 38.0
+        target_count = (
+            4 if site.settlement.config.scale in ("CITY", "CAPITAL") else 3
+        )
+        found = 0
+        for _attempt in range(42):
+            if found >= target_count:
+                break
+            ang = rng.uniform(0, math.tau)
+            dist = base_r + rng.uniform(14.0, 95.0)
+            fx, fy = cx + math.cos(ang) * dist, cy + math.sin(ang) * dist
+            if abs(fx) > half_x or abs(fy) > half_y:
+                continue
+            if not _outside_settlements(plan, fx, fy) or terrain.wet(
+                fx, fy, 16
+            ):
+                continue
+            if any(
+                r.kind
+                in ("DESERT", "CANYON", "MARSH", "MOUNTAIN", "MOUNTAIN_RANGE")
+                and r.distance(fx, fy) < 0.88
+                for r in plan.config.regions
+            ):
+                continue
+            if any(
+                math.hypot(fx - px, fy - py) < 34.0 for px, py, *_ in placed
+            ):
+                continue
+            hit, normal, *_ = project(fx, fy)
+            if (
+                hit is None
+                or normal.z < 0.93
+                or hit.z > plan.config.snowline - 35
+            ):
+                continue
+            fw = rng.uniform(18.0, 28.0)
+            fd = rng.uniform(12.0, 18.0)
+            # Ensure all four corners are dry and outside towns.
+            heading = rng.uniform(0, math.pi)
+            c, s = math.cos(heading), math.sin(heading)
+            corners_ok = True
+            for su in (-fw / 2 - 2, fw / 2 + 2):
+                for sv in (-fd / 2 - 2, fd / 2 + 2):
+                    wx, wy = fx + su * c - sv * s, fy + su * s + sv * c
+                    if not _outside_settlements(plan, wx, wy) or terrain.wet(
+                        wx, wy, 4.0
+                    ):
+                        corners_ok = False
+                        break
+                    ch, cn, *_ = project(wx, wy)
+                    if ch is None or cn.z < 0.90:
+                        corners_ok = False
+                        break
+                if not corners_ok:
+                    break
+            if not corners_ok:
+                continue
+
+            def ground_z(x, y):
+                pt, *_ = project(x, y)
+                return pt.z if pt is not None else terrain.height(x, y)
+
+            build_farmland_patch(
+                soil,
+                crops,
+                (fx, fy),
+                (fw, fd),
+                heading,
+                ground_z,
+                rng,
+                season=season,
+            )
+            placed.append((fx, fy, fw, fd))
+            found += 1
+    if obj := towns._finish(soil, collection, root, "world_farmland"):
+        obj["export_chunk_size"] = 128
+    if obj := towns._finish(crops, collection, root, "world_crops"):
+        obj["collision_enabled"] = False
+        obj["cuttable"] = True
+        obj["gameplay_tag"] = "cuttable_crop"
+        obj["harvest_kind"] = "CROP"
+        obj["cut_stubble_height"] = 0.12
+        obj["export_chunk_size"] = 128
+    return tuple(placed)
 
 
 def _world_rocks_reeds_and_caves(plan, project, collection, root, materials):
@@ -769,8 +1003,10 @@ def build_world(plan, *, scene=None):
             fields = _meadow_fields(
                 plan, project, macro, materials["terrain"], allowed
             )
+            world_grass_sites = list(_world_grass(plan, fields, allowed))
+            season = getattr(plan.config, "season", "SUMMER")
             root["grass_tufts"] = build_grass_meshes(
-                _world_grass(plan, fields, allowed),
+                world_grass_sites,
                 macro,
                 tree,
                 plan.config.seed,
@@ -779,9 +1015,28 @@ def build_world(plan, *, scene=None):
                 materials,
                 towns._finish,
                 realistic=plan.config.art_style == "REALISTIC",
+                season=season,
             )
+            if plan.config.art_style == "REALISTIC":
+                root["cuttable_grass_count"] = build_cuttable_grass_clumps(
+                    world_grass_sites,
+                    macro,
+                    tree,
+                    plan.config.seed,
+                    collection,
+                    root,
+                    materials,
+                    towns._finish,
+                    season=season,
+                    max_clumps=320,
+                )
             root["meadow_views_json"] = json.dumps(fields)
-        _trees(plan, project, collection, root, materials)
+        farm_zones = (
+            _world_farmlands(plan, project, collection, root, materials) or ()
+        )
+        _trees(
+            plan, project, collection, root, materials, farm_zones=farm_zones
+        )
         _world_rocks_reeds_and_caves(
             plan, project, collection, root, materials
         )

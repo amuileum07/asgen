@@ -484,3 +484,333 @@ def build_watermill(batch, centre, along, side, water_level):
         batch.box(
             pt(cx, cy, stone_h * 0.25 + sz / 2), (sz, sz, sz), "wood", basis
         )
+
+
+def build_monument_statue(body, detail, *, scale=1.0, imperial=False):
+    """Build a monumental stone-and-bronze guardian statue."""
+    s = scale * (1.55 if imperial else 1.0)
+    # Stepped octagonal marble and stone pedestal base.
+    for z, r, h, mat in (
+        (-0.20, 2.25, 0.52, "stone"),
+        (0.32, 1.88, 0.42, "stone_light"),
+        (0.74, 1.54, 0.36, "marble_white"),
+    ):
+        cylinder(body, (0, 0, z * s), r * s, h * s, mat, 8)
+    # Fluted colonnaded pedestal drum.
+    drum_z = 1.10 * s
+    drum_h = 2.65 * s
+    cylinder(body, (0, 0, drum_z), 1.05 * s, drum_h, "stone_light", 12)
+    for i in range(8):
+        a = i * math.tau / 8
+        cylinder(
+            detail,
+            (math.cos(a) * 1.16 * s, math.sin(a) * 1.16 * s, drum_z),
+            0.14 * s,
+            drum_h,
+            "marble_white",
+            8,
+        )
+    cornice_z = drum_z + drum_h
+    cylinder(body, (0, 0, cornice_z), 1.38 * s, 0.36 * s, "marble_white", 8)
+    # Heroic cast-bronze armored guardian figure.
+    fig_z = cornice_z + 0.36 * s
+    # Boots and greaves.
+    for sx in (-0.30, 0.30):
+        cylinder(
+            detail,
+            (sx * s, 0, fig_z),
+            0.22 * s,
+            1.45 * s,
+            "bronze_statue",
+            8,
+        )
+    # Armored torso, pauldrons, and flowing bronze cape.
+    detail.box(
+        (0, 0, fig_z + 2.22 * s),
+        (1.05 * s, 0.62 * s, 1.58 * s),
+        "bronze_statue",
+    )
+    for sx in (-0.66, 0.66):
+        cylinder(
+            detail,
+            (sx * s, 0, fig_z + 2.68 * s),
+            0.28 * s,
+            0.42 * s,
+            "bronze_statue",
+            8,
+        )
+    detail.prism(
+        [
+            (-0.58 * s, -0.32 * s, fig_z + 2.95 * s),
+            (0.58 * s, -0.32 * s, fig_z + 2.95 * s),
+            (0.92 * s, -0.78 * s, fig_z + 0.12 * s),
+            (-0.92 * s, -0.78 * s, fig_z + 0.12 * s),
+        ],
+        (0, -0.14 * s, 0),
+        "bronze_statue",
+    )
+    # Crested helm and heroic head.
+    cylinder(
+        detail,
+        (0, 0, fig_z + 3.04 * s),
+        0.31 * s,
+        0.58 * s,
+        "bronze_statue",
+        10,
+    )
+    detail.box(
+        (0, -0.04 * s, fig_z + 3.68 * s),
+        (0.14 * s, 0.56 * s, 0.32 * s),
+        "bronze_statue",
+    )
+    # Left kite shield on pedestal; right arm raising sword/spear.
+    detail.box(
+        (-0.84 * s, 0.38 * s, fig_z + 1.55 * s),
+        (0.16 * s, 0.92 * s, 1.65 * s),
+        "bronze_statue",
+    )
+    detail.beam(
+        (0.68 * s, 0.05 * s, fig_z + 2.75 * s),
+        (1.12 * s, 0.35 * s, fig_z + 3.55 * s),
+        0.16 * s,
+        "bronze_statue",
+    )
+    # Tall raised imperial sword/halberd towering above the square.
+    detail.beam(
+        (1.12 * s, 0.35 * s, fig_z + 2.20 * s),
+        (1.12 * s, 0.35 * s, fig_z + 5.65 * s),
+        0.09 * s,
+        "bronze_statue",
+    )
+    detail.box(
+        (1.12 * s, 0.35 * s, fig_z + 3.62 * s),
+        (0.72 * s, 0.12 * s, 0.12 * s),
+        "bronze_statue",
+    )
+
+
+def build_training_ground(body, detail, surface, *, radius=6.4):
+    """Build an enclosed imperial military sparring and archery yard."""
+    # Raked sand sparring floor with low dressed stone curb.
+    cylinder(surface, (0, 0, 0.02), radius - 0.35, 0.10, "arena_sand", 16)
+    ring_n = 16
+    for i in range(ring_n):
+        a0 = i * math.tau / ring_n
+        a1 = (i + 1) * math.tau / ring_n
+        # Leave an open front entrance gateway along -Y.
+        if -1.95 < math.atan2(math.sin(a0), math.cos(a0)) < -1.15:
+            continue
+        p0 = (math.cos(a0) * radius, math.sin(a0) * radius, 0.0)
+        p1 = (math.cos(a1) * radius, math.sin(a1) * radius, 0.0)
+        body.box((p0[0], p0[1], 0.62), (0.20, 0.20, 1.38), "timber")
+        for rail_z in (0.48, 0.96):
+            body.beam(
+                (p0[0], p0[1], rail_z),
+                (p1[0], p1[1], rail_z),
+                0.09,
+                "wood",
+            )
+        if i % 4 == 0:
+            # Tall crimson-and-blue imperial training banners.
+            detail.beam(
+                (p0[0], p0[1], 0.0), (p0[0], p0[1], 4.6), 0.09, "timber"
+            )
+            in_x, in_y = -math.cos(a0), -math.sin(a0)
+            detail.prism(
+                [
+                    (p0[0], p0[1], 4.45),
+                    (p0[0] + in_x * 1.15, p0[1] + in_y * 1.15, 4.10),
+                    (p0[0], p0[1], 3.35),
+                ],
+                (0, 0, 0.05),
+                "flag" if (i // 4) % 2 == 0 else "fabric_blue",
+            )
+    # Three archery targets on wooden tripod stands along the far side.
+    for tx in (-2.4, 0.0, 2.4):
+        ty = radius * 0.56
+        body.beam((tx - 0.35, ty + 0.2, 0), (tx, ty, 1.55), 0.07, "wood")
+        body.beam((tx + 0.35, ty + 0.2, 0), (tx, ty, 1.55), 0.07, "wood")
+        body.beam((tx, ty - 0.4, 0), (tx, ty, 1.55), 0.07, "wood")
+        detail.box((tx, ty - 0.06, 1.18), (0.92, 0.22, 0.92), "hay_gold")
+        detail.box((tx, ty - 0.18, 1.18), (0.52, 0.04, 0.52), "cloth_red")
+        detail.box((tx, ty - 0.21, 1.18), (0.20, 0.04, 0.20), "cloth_cream")
+    # Two wooden knight sparring dummies (pell posts) in the arena.
+    for dx, dy in ((-2.2, -1.2), (2.2, -1.2)):
+        body.box((dx, dy, 0.95), (0.22, 0.22, 1.95), "timber")
+        body.box((dx, dy, 1.38), (1.28, 0.16, 0.18), "wood")
+        detail.box((dx, dy, 1.35), (0.44, 0.34, 0.58), "hay_gold")
+        detail.box((dx, dy, 1.82), (0.28, 0.28, 0.30), "iron")
+    # Weapon rack along the west palisade.
+    rx = -radius * 0.62
+    for ry in (-0.9, 0.9):
+        body.box((rx, ry, 0.72), (0.14, 0.14, 1.45), "timber")
+    for rz in (0.45, 1.15):
+        body.beam((rx, -0.95, rz), (rx, 0.95, rz), 0.07, "wood")
+    for k in range(5):
+        wy = -0.68 + k * 0.34
+        detail.beam((rx + 0.10, wy, 0.15), (rx + 0.10, wy, 2.05), 0.04, "iron")
+
+
+def _face(batch, points, material):
+    first = len(batch.vertices)
+    batch.vertices.extend(tuple(p) for p in points)
+    batch.faces.append(tuple(range(first, len(batch.vertices))))
+    batch.face_materials.append(batch.material_indices[material])
+
+
+def _add_wheat_sheaf(batch, base, rng, material, height):
+    """Build a slender cluster of golden wheat stalks and ears."""
+    stalks = 6
+    for i in range(stalks):
+        ang = i * math.tau / stalks + rng.uniform(-0.35, 0.35)
+        ox, oy = math.cos(ang), math.sin(ang)
+        r = rng.uniform(0.03, 0.22)
+        p0 = base + Vector((ox * r, oy * r, 0.0))
+        h = height * rng.uniform(0.78, 1.18)
+        lean = h * rng.uniform(0.14, 0.34)
+        fwd = Vector((ox, oy, 0.0))
+        side = Vector((-oy, ox, 0.0))
+        p1 = p0 + fwd * (lean * 0.42) + Vector((0, 0, h * 0.56))
+        p2 = p0 + fwd * lean + Vector((0, 0, h))
+        w0, w1, w2 = 0.022, 0.018, 0.008
+        _face(
+            batch,
+            [p0 - side * w0, p0 + side * w0, p1 + side * w1, p1 - side * w1],
+            material,
+        )
+        _face(
+            batch,
+            [p1 - side * w1, p1 + side * w1, p2 + side * w2, p2 - side * w2],
+            material,
+        )
+        # Plump drooping golden grain ear at the stalk tip.
+        ear = p2 + fwd * 0.04 - Vector((0, 0, 0.05))
+        batch.box(ear, (0.048, 0.036, 0.14), material)
+
+
+def _add_cabbage_rosette(batch, base, rng, material):
+    """Build a layered leafy vegetable rosette mound."""
+    r = rng.uniform(0.22, 0.32)
+    h = rng.uniform(0.18, 0.28)
+    for k in range(5):
+        ang = k * math.tau / 5 + rng.uniform(-0.25, 0.25)
+        fwd = Vector((math.cos(ang), math.sin(ang), 0.0))
+        side = Vector((-fwd.y, fwd.x, 0.0))
+        tip = base + fwd * r + Vector((0, 0, h * 0.55))
+        _face(
+            batch,
+            [
+                base + Vector((0, 0, 0.04)),
+                base
+                + fwd * (r * 0.48)
+                - side * (r * 0.44)
+                + Vector((0, 0, h)),
+                tip,
+                base
+                + fwd * (r * 0.48)
+                + side * (r * 0.44)
+                + Vector((0, 0, h)),
+            ],
+            material,
+        )
+    cylinder(batch, base, r * 0.46, h * 0.85, material, 6)
+
+
+def build_farmland_patch(
+    soil_batch,
+    crop_batch,
+    centre,
+    size,
+    heading,
+    height_fn,
+    rng,
+    *,
+    season="SUMMER",
+):
+    """Build plowed furrows, crops, timber fence, and hay bales."""
+    cx, cy = centre
+    w, d = size
+    c, s = math.cos(heading), math.sin(heading)
+    basis = ((c, s, 0), (-s, c, 0), (0, 0, 1))
+    crop_kind = rng.choice(("WHEAT", "WHEAT", "VEGETABLE"))
+
+    def world_pt(u, v, z_off=0.0):
+        wx = cx + u * c - v * s
+        wy = cy + u * s + v * c
+        return Vector((wx, wy, height_fn(wx, wy) + z_off))
+
+    # Plowed soil furrow ridges across the field width.
+    rows = max(5, int(d / 1.35))
+    row_step = d / rows
+    segs = max(5, int(w / 3.2))
+    seg_len = w / segs
+    for r in range(rows):
+        v = -d / 2 + (r + 0.5) * row_step
+        for k in range(segs):
+            u = -w / 2 + (k + 0.5) * seg_len
+            p = world_pt(u, v, 0.05)
+            soil_batch.box(
+                p,
+                (seg_len * 0.99, row_step * 0.68, 0.24),
+                "soil_furrow",
+                basis,
+            )
+            if season == "WINTER":
+                continue
+            if crop_kind == "WHEAT":
+                mat = "wheat_gold" if season != "SPRING" else "crop_green"
+                h = 0.86 if season != "SPRING" else 0.44
+                sheaves = 4
+                for m in range(sheaves):
+                    su = u + (m - (sheaves - 1) / 2) * (seg_len / sheaves)
+                    sp = world_pt(
+                        su + rng.uniform(-0.14, 0.14),
+                        v + rng.uniform(-0.12, 0.12),
+                        0.15,
+                    )
+                    _add_wheat_sheaf(crop_batch, sp, rng, mat, h)
+            else:
+                heads = 3
+                for m in range(heads):
+                    su = u + (m - (heads - 1) / 2) * (seg_len / heads)
+                    sp = world_pt(
+                        su + rng.uniform(-0.10, 0.10),
+                        v + rng.uniform(-0.08, 0.08),
+                        0.16,
+                    )
+                    _add_cabbage_rosette(crop_batch, sp, rng, "crop_green")
+
+    # Split-rail timber fence posts and rails around the field.
+    hw, hd = w / 2 + 0.65, d / 2 + 0.65
+    corners = ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd))
+    for a, b in zip(corners, corners[1:] + corners[:1], strict=True):
+        dist = math.hypot(b[0] - a[0], b[1] - a[1])
+        posts = max(2, round(dist / 3.4))
+        prev = None
+        for i in range(posts + 1):
+            t = i / posts
+            pu = a[0] + (b[0] - a[0]) * t
+            pv = a[1] + (b[1] - a[1]) * t
+            p = world_pt(pu, pv, 0.0)
+            soil_batch.box(
+                p + Vector((0, 0, 0.46)), (0.14, 0.14, 1.12), "timber", basis
+            )
+            if prev is not None and not (i == posts // 2 and a == corners[0]):
+                for rz in (0.36, 0.76):
+                    soil_batch.beam(
+                        prev + Vector((0, 0, rz)),
+                        p + Vector((0, 0, rz)),
+                        0.065,
+                        "wood",
+                    )
+            prev = p
+
+    # Stacked golden hay bales near one field corner.
+    for bu, bv, bz in (
+        (-hw + 1.8, -hd + 1.6, 0.44),
+        (-hw + 3.1, -hd + 1.6, 0.44),
+        (-hw + 2.45, -hd + 1.6, 1.24),
+    ):
+        soil_batch.box(
+            world_pt(bu, bv, bz), (1.18, 0.86, 0.80), "hay_gold", basis
+        )

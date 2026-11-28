@@ -768,10 +768,141 @@ def castle_batches(castle, sampler, materials, *, realistic=False):
             )
             details.beam(
                 (tx, ty, apex - 0.2 * s),
-                (tx, ty, apex + 1.65 * s),
+                (tx, ty, apex + (2.4 if architecture.imperial else 1.65) * s),
                 0.065 * s,
                 "iron",
             )
+        if architecture.imperial:
+            # Neuschwanstein/Windsor/Alcazar-inspired imperial grandeur.
+            # 1. Tall corner bastion spires around outer curtain wall.
+            for idx in range(2, len(architecture.outline)):
+                px, py = architecture.outline[idx]
+                tr = 2.05 * s
+                th = architecture.wall_height + 4.8 * s
+                cylinder(masonry, (px, py, 0), tr, th, "castle_stone", 12)
+                cylinder(
+                    details,
+                    (px, py, th - 0.35 * s),
+                    tr + 0.28 * s,
+                    0.45 * s,
+                    "castle_trim",
+                    12,
+                )
+                spire_h = 6.2 * s
+                _pointed_roof(
+                    roofs,
+                    RoofSpec(
+                        f"imp_bastion_{idx}",
+                        (px, py),
+                        th + 0.08 * s,
+                        tr * 2.15,
+                        tr * 2.15,
+                        spire_h,
+                        "CONE",
+                        12,
+                    ),
+                    "castle_cone",
+                )
+                details.beam(
+                    (px, py, th + spire_h - 0.1 * s),
+                    (px, py, th + spire_h + 1.9 * s),
+                    0.06 * s,
+                    "bronze_statue",
+                )
+            # 2. Soaring imperial crown lantern atop the main donjon.
+            donjon_b = next(b for b in architecture.blocks if b.id == "donjon")
+            dx, dy = donjon_b.centre
+            lantern_base = BASE + donjon_b.height + donjon_b.roof_height * 0.72
+            lantern_h = 4.2 * s
+            cylinder(
+                masonry,
+                (dx, dy, lantern_base),
+                1.9 * s,
+                lantern_h,
+                "castle_trim",
+                8,
+            )
+            for k in range(8):
+                a = k * math.tau / 8
+                details.beam(
+                    (
+                        dx + math.cos(a) * 1.95 * s,
+                        dy + math.sin(a) * 1.95 * s,
+                        lantern_base,
+                    ),
+                    (
+                        dx + math.cos(a) * 1.95 * s,
+                        dy + math.sin(a) * 1.95 * s,
+                        lantern_base + lantern_h,
+                    ),
+                    0.16 * s,
+                    "marble_white",
+                )
+            _pointed_roof(
+                roofs,
+                RoofSpec(
+                    "imperial_crown",
+                    (dx, dy),
+                    lantern_base + lantern_h,
+                    4.4 * s,
+                    4.4 * s,
+                    5.8 * s,
+                    "PYRAMID_8",
+                    8,
+                ),
+                "castle_cone",
+            )
+            # 3. Gothic stone buttresses along Palas and Chapel facades.
+            for blk in architecture.blocks:
+                if blk.id not in ("palas", "chapel"):
+                    continue
+                bx, by = blk.centre
+                bw, bd = blk.size
+                for side in (-1, 1):
+                    for k in range(4):
+                        frac = -0.36 + k * 0.72 / 3
+                        details.box(
+                            (
+                                bx + side * (bw * 0.5 + 0.42 * s),
+                                by + frac * bd,
+                                blk.height * 0.36,
+                            ),
+                            (0.85 * s, 0.48 * s, blk.height * 0.72),
+                            "castle_trim",
+                        )
+            # 4. Twin towering barbican spires flanking imperial gate.
+            gy = architecture.outline[0][1]
+            for side in (-1, 1):
+                gx = side * (architecture.gate_width * 0.5 + 2.4 * s)
+                gh = architecture.wall_height + 6.8 * s
+                cylinder(
+                    masonry, (gx, gy, 0), 2.35 * s, gh, "castle_stone", 12
+                )
+                _pointed_roof(
+                    roofs,
+                    RoofSpec(
+                        f"imp_gate_{side}",
+                        (gx, gy),
+                        gh,
+                        5.1 * s,
+                        5.1 * s,
+                        6.8 * s,
+                        "CONE",
+                        12,
+                    ),
+                    "castle_cone",
+                )
+                details.beam(
+                    (gx, gy - 2.38 * s, architecture.wall_height * 0.45),
+                    (gx, gy - 2.38 * s, architecture.wall_height * 0.92),
+                    0.07 * s,
+                    "iron",
+                )
+                details.box(
+                    (gx, gy - 2.46 * s, architecture.wall_height * 0.68),
+                    (1.15 * s, 0.08 * s, 3.2 * s),
+                    "flag",
+                )
     # A pennant gives the main donjon a readable distant silhouette.
     donjon = next(b for b in architecture.blocks if b.id == "donjon")
     x, y = donjon.centre

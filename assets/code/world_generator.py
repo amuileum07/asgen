@@ -12,7 +12,12 @@ SCRIPT = Path(__file__).resolve()
 if str(SCRIPT.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT.parent))
 
-from art_style import ART_STYLES, STYLE_ITEMS  # noqa: E402
+from art_style import (  # noqa: E402
+    ART_STYLES,
+    SEASON_ITEMS,
+    SEASONS,
+    STYLE_ITEMS,
+)
 from world_rules import WorldConfig, make_world  # noqa: E402
 
 try:
@@ -131,6 +136,11 @@ if bpy is not None:
             items=(("CONFIG", "JSON 설정", "기본값은 카툰풍"), *STYLE_ITEMS),
             default="CONFIG",
         )
+        season: bpy.props.EnumProperty(
+            name="계절",
+            items=(("CONFIG", "JSON 설정", "기본값은 여름"), *SEASON_ITEMS),
+            default="CONFIG",
+        )
         config: bpy.props.StringProperty(
             name="월드 설정 JSON", subtype="FILE_PATH", default=str(PRESET)
         )
@@ -156,6 +166,8 @@ if bpy is not None:
                 config = _read_config(Path(bpy.path.abspath(settings.config)))
                 if settings.art_style != "CONFIG":
                     config = replace(config, art_style=settings.art_style)
+                if settings.season != "CONFIG":
+                    config = replace(config, season=settings.season)
                 collection, root, plan = builder.build_world(
                     make_world(config)
                 )
@@ -220,6 +232,7 @@ if bpy is not None:
             layout = self.layout
             layout.prop(settings, "config")
             layout.prop(settings, "art_style")
+            layout.prop(settings, "season")
             layout.operator("worldmap.generate")
             layout.prop(settings, "target")
             layout.prop(settings, "focus")
@@ -278,6 +291,7 @@ def main(argv=None):
     style.add_argument(
         "--toon", dest="art_style", action="store_const", const="CARTOON"
     )
+    parser.add_argument("--season", type=str.upper, choices=SEASONS)
     parser.add_argument(
         "--meadow-view",
         action="store_true",
@@ -301,6 +315,8 @@ def main(argv=None):
     blueprint = json.loads(args.config.read_text(encoding="utf-8-sig"))
     if args.art_style:
         blueprint["art_style"] = args.art_style
+    if args.season:
+        blueprint["season"] = args.season
     if "blueprint_version" in blueprint:
         from atlas_generator import run_blueprint
 

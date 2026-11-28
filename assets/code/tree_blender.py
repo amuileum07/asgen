@@ -88,12 +88,16 @@ def _leaf(batch, start, direction, length, width, slot, *, arched=True):
     batch.face_materials.extend([slot] * 6)
 
 
-def _spray(leaves, twigs, start, end, angle, rng, pine, slots, compact):
+def _spray(
+    leaves, twigs, start, end, angle, rng, pine, slots, compact, *, bare=False
+):
     along = end - start
     direction = along.normalized()
     side = UP.cross(direction).normalized()
     radius = 0.011 if pine else 0.014
     tree_stem(twigs, (start, end), (radius, 0.003), angle, 4, "bark")
+    if bare:
+        return
     pairs = 3 if compact else (9 if pine else 7)
     for i in range(pairs):
         t = (i + 0.32) / pairs
@@ -117,7 +121,7 @@ def _spray(leaves, twigs, start, end, angle, rng, pine, slots, compact):
             )
 
 
-def _broadleaf(leaves, trunk, limbs, rng, slots, compact):
+def _broadleaf(leaves, trunk, limbs, rng, slots, compact, *, bare=False):
     lean = _direction(rng.random() * math.tau) * rng.uniform(0.14, 0.38)
 
     def stem(z):
@@ -179,7 +183,16 @@ def _broadleaf(leaves, trunk, limbs, rng, slots, compact):
                     + UP * rng.uniform(-0.08, 0.28)
                 )
                 _spray(
-                    leaves, limbs, start, stop, yaw, rng, False, slots, compact
+                    leaves,
+                    limbs,
+                    start,
+                    stop,
+                    yaw,
+                    rng,
+                    False,
+                    slots,
+                    compact,
+                    bare=bare,
                 )
 
 
@@ -262,11 +275,20 @@ class TreeLibrary:
     """Reuse tree meshes within a generated collection."""
 
     def __init__(
-        self, collection, root, materials, finish, *, town=False, compact=False
+        self,
+        collection,
+        root,
+        materials,
+        finish,
+        *,
+        town=False,
+        compact=False,
+        season="SUMMER",
     ):
         self.collection, self.root = collection, root
         self.materials, self.finish = materials, finish
         self.compact = compact
+        self.season = season
         self.roles = (
             "trees" if town else "world_woodland",
             "tree_trunks" if town else "world_tree_trunks",
@@ -274,9 +296,58 @@ class TreeLibrary:
         )
         self.variants = {}
 
-    def plant(self, base, height, turn, spread, broadleaf, rng, material):
+    def _seasonal_appearance(self, broadleaf, material, rng, season):
+        if season == "WINTER":
+            if broadleaf:
+                return material, True
+            mat = (
+                "leaves_winter"
+                if "leaves_winter" in self.materials
+                else material
+            )
+            return mat, False
+        if season == "AUTUMN" and broadleaf:
+            roll = rng.random()
+            if roll < 0.16:
+                return material, True
+            choices = [
+                k
+                for k in (
+                    "leaves_autumn_red",
+                    "leaves_autumn_orange",
+                    "leaves_autumn_gold",
+                )
+                if k in self.materials
+            ]
+            if choices:
+                return rng.choice(choices), False
+        if (
+            season == "SPRING"
+            and broadleaf
+            and rng.random() < 0.28
+            and "leaves_blossom" in self.materials
+        ):
+            return "leaves_blossom", False
+        return material, False
+
+    def plant(
+        self,
+        base,
+        height,
+        turn,
+        spread,
+        broadleaf,
+        rng,
+        material,
+        *,
+        season=None,
+    ):
+        active_season = season or self.season
+        mat, bare = self._seasonal_appearance(
+            broadleaf, material, rng, active_season
+        )
         variant = rng.randrange(3)
-        key = broadleaf, variant, material
+        key = broadleaf, variant, mat, bare
         if key in self.variants:
             objects = [obj.copy() for obj in self.variants[key]]
             for obj in objects:
@@ -284,33 +355,60 @@ class TreeLibrary:
         else:
             species = "Broadleaf" if broadleaf else "Conifer"
             batches = [
-                MeshBatch(f"{species}_{part}_{variant}", self.materials)
+                MeshBatch(
+                    f"{species}_{part}_{variant}_{mat}"
+                    + ("_bare" if bare else ""),
+                    self.materials,
+                )
                 for part in ("Foliage", "Trunk", "Branches")
             ]
             leaves = batches[0].material_indices
-            slots = [leaves[material]] * 5 + [
-                leaves["leaves_light"],
-                leaves["leaves_shadow"],
-            ]
-            grow = _broadleaf if broadleaf else _conifer
-            grow(
-                *batches,
-                random.Random(f"{species}:{variant}"),
-                slots,
-                self.compact,
+            accent_light = (
+                mat if mat.startswith("leaves_") and mat != "leaves" else None
             )
-            objects = [
-                self.finish(batch, self.collection, self.root, role)
-                for batch, role in zip(batches, self.roles, strict=True)
+            slots = [leaves[mat]] * 5 + [
+                leaves[accent_light or "leaves_light"],
+                leaves[
+                    "leaves_shadow"
+                    if "leaves_shadow" in leaves and not accent_light
+                    else mat
+                ],
             ]
-            crown, _, branches = objects
-            crown["collision_enabled"] = branches["collision_enabled"] = False
-            crown["atlas_effect"] = "CROWN"
-            mesh = crown.data
-            uv = mesh.uv_layers.active.data
-            for loop in mesh.loops:
-                z = mesh.vertices[loop.vertex_index].co.z
-                uv[loop.index].uv.y = min(1.0, max(0.0, z / 5)) ** 1.6
+            if broadleaf:
+                _broadleaf(
+                    *batches,
+                    random.Random(f"{species}:{variant}"),
+                    slots,
+                    self.compact,
+                    bare=bare,
+                )
+            else:
+                _conifer(
+                    *batches,
+                    random.Random(f"{species}:{variant}"),
+                    slots,
+                    self.compact,
+                )
+            objects = [
+                obj
+                for batch, role in zip(batches, self.roles, strict=True)
+                if (
+                    obj := self.finish(batch, self.collection, self.root, role)
+                )
+                is not None
+            ]
+            for obj in objects:
+                role = obj.get("settlement_part", "")
+                if role in ("trees", "world_woodland"):
+                    obj["collision_enabled"] = False
+                    obj["atlas_effect"] = "CROWN"
+                    mesh = obj.data
+                    uv = mesh.uv_layers.active.data
+                    for loop in mesh.loops:
+                        z = mesh.vertices[loop.vertex_index].co.z
+                        uv[loop.index].uv.y = min(1.0, max(0.0, z / 5)) ** 1.6
+                elif role == "world_tree_branches":
+                    obj["collision_enabled"] = False
             self.variants[key] = objects
         scale = height / 5
         for obj in objects:

@@ -162,6 +162,15 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(plan.config.caves)
         self.assertTrue(any(r.kind == "STREAM" for r in plan.config.rivers))
         self.assertTrue(any(lk.kind == "POND" for lk in plan.config.lakes))
+        self.assertTrue(
+            any(reg.kind == "PLATEAU" for reg in plan.config.regions)
+        )
+        self.assertTrue(
+            any(reg.kind == "FOREST" for reg in plan.config.regions)
+        )
+        capital = next(s for s in plan.sites if s.id == "citadel_ford")
+        self.assertEqual(capital.settlement.config.scale, "CAPITAL")
+        self.assertTrue(capital.settlement.castle.architecture.imperial)
         for site in plan.sites:
             self.assertTrue(site.settlement.buildings)
             if site.settlement.markets:

@@ -88,16 +88,35 @@ class CivicPlanner:
                 )
                 for i in range(8)
             ]
-            limit = 0.55 if kind == "BELL_TOWER" else 0.14
+            limit = (
+                1.65
+                if kind == "TRAINING_GROUND"
+                else 0.75
+                if kind == "BELL_TOWER"
+                else 0.22
+                if kind == "STATUE_ANCHOR"
+                else 0.14
+            )
             if max(samples) - min(samples) > limit * scale:
                 return False
         grand = self.plan.config.scale in ("CITY", "CAPITAL")
+        imperial = (
+            self.plan.config.scale == "CAPITAL"
+            and self.plan.config.art_style == "REALISTIC"
+        )
         size = {
             "WELL": (3.4, 2.9, 3.15),
             "FOUNTAIN": (3.4, 3.4, 3.05),
             "STREET_LAMP": (2.6 if self.arms == 2 else 1.6, 0.7, 4.05),
-            "STATUE_ANCHOR": (1.8, 1.8, 3.2),
+            "STATUE_ANCHOR": (
+                (4.6, 4.6, 13.8)
+                if imperial
+                else (2.8, 2.8, 8.6)
+                if (grand and self.plan.config.art_style == "REALISTIC")
+                else (1.8, 1.8, 3.2)
+            ),
             "BELL_TOWER": (4.4, 4.4, 22.8) if grand else (3.4, 3.4, 15.2),
+            "TRAINING_GROUND": (12.8, 12.8, 4.8),
         }[kind]
         self.assets.append(
             CivicAsset(
@@ -116,6 +135,8 @@ class CivicPlanner:
                     "tiers": self.tiers,
                     "lantern_sides": 4 if self.family == "OCTAGONAL" else 6,
                     "grand": grand,
+                    "imperial": imperial,
+                    "realistic": self.plan.config.art_style == "REALISTIC",
                 },
             )
         )
@@ -129,6 +150,31 @@ class CivicPlanner:
                 point = tuple(
                     market.centre[j] + ring * market.radius * f(angle)
                     for j, f in enumerate((math.cos, math.sin))
+                )
+                if self.add(kind, point, radius, scale, angle):
+                    return True
+        return False
+
+    def open_yard_asset(self, kind, radius, scale):
+        """Find a clear open yard anywhere inside the settlement."""
+        phase = self.rng.uniform(0, math.tau)
+        for market in reversed(self.plan.markets):
+            for ring in (0.65, 1.05, 1.45, 1.95, 2.55):
+                for i in range(32):
+                    angle = phase + i * math.tau / 32
+                    point = tuple(
+                        market.centre[j] + ring * market.radius * f(angle)
+                        for j, f in enumerate((math.cos, math.sin))
+                    )
+                    if self.add(kind, point, radius, scale, angle):
+                        return True
+        max_r = self.plan.config.effective_radius * 0.76
+        for frac in (0.28, 0.42, 0.56, 0.68, 0.82):
+            for i in range(40):
+                angle = phase + i * math.tau / 40
+                point = (
+                    max_r * frac * math.cos(angle),
+                    max_r * frac * math.sin(angle),
                 )
                 if self.add(kind, point, radius, scale, angle):
                     return True
@@ -155,11 +201,21 @@ def make_civic_assets(plan):
         # Place a village or city belfry beside the market square.
         belfry_r = 2.4 if large else 1.9
         planner.square_asset("BELL_TOWER", plan.markets[0], belfry_r, 1.0)
+        if plan.config.scale == "CAPITAL":
+            planner.open_yard_asset("TRAINING_GROUND", 4.8, 0.85)
     if large:
         for market in plan.markets[
             : 2 if plan.config.scale == "CAPITAL" else 1
         ]:
-            planner.square_asset("STATUE_ANCHOR", market, 1.3, 1.0)
+            statue_r = (
+                2.5
+                if (
+                    plan.config.scale == "CAPITAL"
+                    and plan.config.art_style == "REALISTIC"
+                )
+                else 1.3
+            )
+            planner.square_asset("STATUE_ANCHOR", market, statue_r, 1.0)
         spacing = 13 if plan.config.scale == "CAPITAL" else 18
         for road in plan.roads:
             if road.kind not in ("PRIMARY", "SECONDARY"):

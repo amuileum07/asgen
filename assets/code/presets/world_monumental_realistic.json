@@ -37,6 +37,20 @@
       "max_elevation": 32
     },
     {
+      "kind": "FOREST",
+      "centre": [-585, -10],
+      "radii": [185, 165],
+      "elevation": 26
+    },
+    {
+      "kind": "PLATEAU",
+      "centre": [790, 120],
+      "radii": [210, 155],
+      "heading": -14,
+      "elevation": 78,
+      "max_elevation": 94
+    },
+    {
       "kind": "MOUNTAIN_RANGE",
       "centre": [-430, 395],
       "radii": [460, 195],
@@ -134,11 +148,11 @@
       "width": 8,
       "depth": 1.6,
       "points": [
-        [-445, 195, 24.0],
-        [-405, 85, 18.0],
-        [-385, -30, 14.0],
-        [-395, -140, 11.5],
-        [-415, -250, 9.5]
+        [-490, 205, 24.0],
+        [-465, 95, 18.0],
+        [-455, -25, 14.0],
+        [-455, -140, 11.5],
+        [-465, -255, 9.0]
       ]
     }
   ],
@@ -164,18 +178,19 @@
     {
       "id": "citadel_ford",
       "profile": "RIVERSIDE",
-      "near": [-290, -180],
-      "search_radius": 115,
+      "near": [-335, -185],
+      "search_radius": 135,
       "settlement": {
         "seed": 108,
-        "scale": "CITY",
-        "radius": 88,
-        "max_buildings": 48,
+        "scale": "CAPITAL",
+        "radius": 108,
+        "max_buildings": 68,
+        "max_road_grade": 0.26,
         "walls": "ON",
         "castle": "ON",
         "detail": "HIGH",
         "terrain_step": 3.0,
-        "grass_density": 0.9
+        "grass_density": 1.0
       }
     },
     {
