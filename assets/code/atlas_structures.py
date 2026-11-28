@@ -20,6 +20,7 @@ from castle_rules import castle_point, make_castle_architecture
 from civic_blender import _lathe
 from fortification_blender import cylinder
 from house_rules import HouseConfig
+from world_nature_blender import add_cave_mouth, build_bell_tower
 
 UP = Vector((0, 0, 1))
 
@@ -147,6 +148,17 @@ def house(stage, site, lot):
     front = lot["front"]
     palette, wall, roof, pitch, overhang = HOUSING[site["biome"]]
     seed = lot["seed"] % 2_000_000_001
+    site_rng = random.Random(f"{site['seed']}:{site['biome']}:chimney")
+    tradition = site_rng.random()
+    pot_rate = 0.0 if tradition < 0.38 else 0.16 if tradition < 0.72 else 0.76
+    lot_rng = random.Random(f"{seed}:chimney")
+    cap = (
+        "POTS"
+        if lot_rng.random() < pot_rate
+        else "STONE_CAP"
+        if lot_rng.random() < 0.58
+        else "OPEN"
+    )
     config = HouseConfig(
         art_style=stage.root["art_style"],
         seed=seed,
@@ -167,6 +179,7 @@ def house(stage, site, lot):
         roof_tiles=site["rank"] == "CAPITAL" and not stage.game,
         interior=True,
         furnish=True,
+        chimney_cap=cap,
     )
     raised = 0.80 if site["biome"] == "MARSH" else 0
     collection, root, plan = houses.build_house(
@@ -1085,6 +1098,20 @@ def dungeon(stage, spec):
         (x + 2.9, y + 0.94, z + 0.63), (0.64, 0.42, 1.26), "castle_stone"
     )
     stage.finish(stone, "trail_marker")
+    if stage.root["art_style"] == "REALISTIC":
+        grotto = stage.batch(uid + "_grotto", 0.02)
+        g_rng = random.Random(f"{uid}:grotto")
+        add_cave_mouth(
+            grotto,
+            (x, y - 0.8),
+            90.0,
+            8.2,
+            4.6,
+            6.5,
+            lambda _px, _py: z,
+            g_rng,
+        )
+        stage.finish(grotto, "natural_stone")
     return head
 
 
@@ -1265,6 +1292,23 @@ def plaza(stage, site):
                     (0.22, 0.24, 0.37),
                 )
     stage.finish(props, "civic_structure")
+    if stage.root["art_style"] == "REALISTIC":
+        b_body = stage.batch(uid + "_belfry", 0.012)
+        b_roof = stage.batch(uid + "_belfry_roof", 0.012)
+        b_bell = stage.batch(uid + "_belfry_bell", 0.008)
+        grand = site["rank"] in ("CITY", "CAPITAL")
+        build_bell_tower(b_body, b_roof, b_bell, grand=grand)
+        bx = x - w * 0.34
+        by = y - d * 0.24
+        for batch, role in (
+            (b_body, "civic_structure"),
+            (b_roof, "civic_canopy"),
+            (b_bell, "civic_effect"),
+        ):
+            batch.vertices = [
+                (vx + bx, vy + by, vz + z) for vx, vy, vz in batch.vertices
+            ]
+            stage.finish(batch, role)
     stage.finish(bulbs, "lamp_glass", effect="LAMP")
     if fabric := stage.finish(flags, "banner_preview", effect="FLAG"):
         highest = max(v.co.z for v in fabric.data.vertices)

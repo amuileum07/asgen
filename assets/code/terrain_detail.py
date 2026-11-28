@@ -38,11 +38,14 @@ def refine_slopes(points, triangles, codes, height_at, seed, allowed=None):
             continue
         x, y, z = ((p[i] + q[i]) / 2 for i in range(3))
         grade = abs(p[2] - q[2]) / run
-        # Skewed strata break up the slope at two physical wavelengths.
+        # Skewed strata and talus ridges carve realistic rocky slopes.
         ridge = 0.5 - abs(value_noise(x / 3.7, y / 3.7 + z / 1.7, seed))
+        strata = 0.5 - abs(value_noise(x / 8.5, y / 8.5 + z / 2.4, seed + 19))
         grit = value_noise(x / 1.6, y / 1.6, seed + 43)
-        relief = (ridge + 0.38 * grit) * (0.08 + smoothstep(0.1, 0.9, grade))
-        limit = min(0.72, run * 0.095)
+        relief = (ridge * 0.72 + strata * 0.45 + 0.36 * grit) * (
+            0.09 + 1.15 * smoothstep(0.1, 0.85, grade)
+        )
+        limit = min(0.85, run * 0.11)
         dz = max(-limit, min(limit, height_at(x, y) - z + relief))
         mids[a, b] = len(points)
         points.append((x, y, z + dz))

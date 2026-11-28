@@ -15,6 +15,7 @@ from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
 from terrain_rules import value_noise
 from tree_blender import tree_stem
+from world_nature_blender import build_bell_tower
 
 
 def _face(batch, points, material):
@@ -297,7 +298,7 @@ def project_assets(plan, mesh):
     result = []
     for asset in plan.civic_assets:
         samples = [asset.position[:2]]
-        if asset.kind in ("WELL", "FOUNTAIN"):
+        if asset.kind in ("WELL", "FOUNTAIN", "BELL_TOWER"):
             samples += [
                 (
                     asset.position[0]
@@ -361,6 +362,13 @@ def build_civic(plan, collection, root, materials, finish, owned):
                 _well(body, canopy, surface, asset.parameters)
             elif asset.kind == "FOUNTAIN":
                 _fountain(body, surface, asset.parameters)
+            elif asset.kind == "BELL_TOWER":
+                build_bell_tower(
+                    body,
+                    canopy,
+                    surface,
+                    grand=asset.parameters.get("grand", False),
+                )
             else:
                 lights = _lamp(body, surface, asset.parameters)
             blocks = []
@@ -554,7 +562,16 @@ def add_tree(
 
 
 def build_grass(
-    plan, mesh, bvh, collection, root, materials, finish, *, allowed=None
+    plan,
+    mesh,
+    bvh,
+    collection,
+    root,
+    materials,
+    finish,
+    *,
+    allowed=None,
+    realistic=False,
 ):
     sites = grass_sites(plan)
     if allowed is not None:
@@ -568,6 +585,7 @@ def build_grass(
         root,
         materials,
         finish,
+        realistic=realistic,
     )
 
 
@@ -773,6 +791,7 @@ def build_grass_meshes(
     *,
     chunk_size=32,
     simple=False,
+    realistic=False,
 ):
     rng = random.Random(f"{seed}:grass-mesh")
     batches, count = {}, 0
@@ -793,10 +812,16 @@ def build_grass_meshes(
     )
     grass_mat = materials.get("grass_tuft") or materials["grass_blade_0"]
 
-    mid_cool = Vector(_linear_color("70994f")[:3])
-    mid_warm = Vector(_linear_color("a1b75b")[:3])
-    tip_cool = Vector(_linear_color("9dbc71")[:3])
-    tip_warm = Vector(_linear_color("d1d58b")[:3])
+    if realistic:
+        mid_cool = Vector(_linear_color("4e6f38")[:3])
+        mid_warm = Vector(_linear_color("7c8b47")[:3])
+        tip_cool = Vector(_linear_color("7d9254")[:3])
+        tip_warm = Vector(_linear_color("b4aa67")[:3])
+    else:
+        mid_cool = Vector(_linear_color("70994f")[:3])
+        mid_warm = Vector(_linear_color("a1b75b")[:3])
+        tip_cool = Vector(_linear_color("9dbc71")[:3])
+        tip_warm = Vector(_linear_color("d1d58b")[:3])
     flower_colors = (
         _linear_color("4ba7ff")[:3],
         _linear_color("f8f4e2")[:3],
@@ -830,28 +855,31 @@ def build_grass_meshes(
         wind_angle = 0.63 + 0.48 * value_noise(wx / 17, wy / 17, seed + 77)
         wind_dir = Vector((math.cos(wind_angle), math.sin(wind_angle), 0))
         low = height < 0.33
-        count_blades = (3 if low else 5) if simple else (4 if low else 8)
+        if realistic and not simple:
+            count_blades = 6 if low else 10
+        else:
+            count_blades = (3 if low else 5) if simple else (4 if low else 8)
         for j in range(count_blades):
             theta = (
                 angle + j * math.tau / count_blades + rng.uniform(-0.32, 0.32)
             )
             out = Vector((math.cos(theta), math.sin(theta), 0))
-            radius = rng.uniform(0.025, 0.22)
+            radius = rng.uniform(0.025, 0.25 if realistic else 0.22)
             dx, dy = out.x * radius, out.y * radius
             dz = -(dx * normal.x + dy * normal.y) / normal.z - 0.018
             base = Vector((point.x + dx, point.y + dy, point.z + dz))
-            is_short = j >= 4
+            is_short = j >= (5 if realistic else 4)
             if low:
-                h = height * rng.uniform(0.63, 1.14)
-                w = rng.uniform(0.019, 0.033)
-                segments = 1
+                h = height * rng.uniform(0.63, 1.20 if realistic else 1.14)
+                w = rng.uniform(0.016, 0.030)
+                segments = 2 if realistic else 1
             elif is_short:
-                h = height * rng.uniform(0.47, 0.84)
-                w = rng.uniform(0.012, 0.025)
+                h = height * rng.uniform(0.45, 0.86)
+                w = rng.uniform(0.011, 0.023)
                 segments = 2
             else:
-                h = height * rng.uniform(0.84, 1.18)
-                w = rng.uniform(0.012, 0.025)
+                h = height * rng.uniform(0.84, 1.32 if realistic else 1.18)
+                w = rng.uniform(0.011, 0.022)
                 segments = 3
             mix_w = 0.36 if is_short else 0.65
             fwd = (wind_dir * mix_w + out * (1.0 - mix_w)).normalized()

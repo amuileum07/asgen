@@ -724,6 +724,54 @@ def castle_batches(castle, sampler, materials, *, realistic=False):
     entry = architecture.entry
     if not castle.interior:
         _window(details, entry, (1, 0), (0, -1), 2.0 * s, 3.5 * s)
+    if realistic:
+        # Battered stone plinth, buttresses, and tall spire finials.
+        for block in architecture.blocks:
+            bx, by = block.centre
+            bw, bd = block.size
+            masonry.box(
+                (bx, by, 0.72 * s),
+                (bw + 0.95 * s, bd + 0.95 * s, 1.55 * s),
+                "castle_shade",
+            )
+            if block.id == "donjon":
+                # Projecting machicolation crown on the upper donjon.
+                mach_z = block.height - 0.65 * s
+                details.box(
+                    (bx, by, mach_z),
+                    (bw + 0.68 * s, bd + 0.68 * s, 0.55 * s),
+                    "castle_trim",
+                )
+                for k in range(6):
+                    frac = -0.45 + k * 0.90 / 5
+                    for axis in (0, 1):
+                        for side in (-1, 1):
+                            cx = (
+                                bx + frac * bw
+                                if axis == 0
+                                else bx + side * (bw * 0.5 + 0.22 * s)
+                            )
+                            cy = (
+                                by + side * (bd * 0.5 + 0.22 * s)
+                                if axis == 0
+                                else by + frac * bd
+                            )
+                            details.box(
+                                (cx, cy, mach_z - 0.42 * s),
+                                (0.28 * s, 0.28 * s, 0.52 * s),
+                                "castle_shade",
+                            )
+        for tower in architecture.towers:
+            tx, ty = tower.centre
+            apex = (
+                BASE + tower.base + tower.height + tower.roof_height + 0.12 * s
+            )
+            details.beam(
+                (tx, ty, apex - 0.2 * s),
+                (tx, ty, apex + 1.65 * s),
+                0.065 * s,
+                "iron",
+            )
     # A pennant gives the main donjon a readable distant silhouette.
     donjon = next(b for b in architecture.blocks if b.id == "donjon")
     x, y = donjon.centre

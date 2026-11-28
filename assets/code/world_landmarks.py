@@ -10,6 +10,7 @@ from fortification_blender import cylinder
 from house_generator import MeshBatch
 from settlement_blender import _finish
 from transport_rules import resample
+from world_nature_blender import build_watermill
 
 
 def _deck_strip(batch, a, b, side, width, thickness, material):
@@ -118,6 +119,7 @@ def _boat(batch, centre, axis, scale):
 
 def build_landmark(site, terrain, height, collection, root, materials):
     feature = site.landmark
+    realistic = site.settlement.config.art_style == "REALISTIC"
     path = tuple(Vector(p) for p in site.deck_path)
     along = path[-1] - path[0]
     along.z = 0
@@ -189,36 +191,122 @@ def build_landmark(site, terrain, height, collection, root, materials):
                         "wood",
                         (along, side, (0, 0, 1)),
                     )
-        points = tuple(Vector(p) for p in resample(timber, 0.48))
-        for i, (a, b) in enumerate(pairwise(points)):
-            _deck_strip(
-                batch,
-                a,
-                b,
-                side,
-                width,
-                0.18,
-                "wood" if i % 5 else "stair_wood",
-            )
-        posts = resample(timber, 5.0 if feature.kind == "QUAY" else 6.0)
-        _supports(batch, posts, side, width, height, "timber")
-        for a, b in pairwise(timber):
-            for offset in (-0.35, 0.35):
-                beam = side * (width * offset) - Vector((0, 0, 0.27))
-                batch.beam(a + beam, b + beam, 0.30, "timber")
-        if feature.kind == "BRIDGE":
-            for normal in (side, -side):
-                _railing(batch, path, normal, width, material="timber")
+        if feature.kind == "BRIDGE" and realistic:
+            # Medieval multi-arch stone bridge with piers and parapets.
+            points = tuple(Vector(p) for p in resample(path, 0.72))
+            for a, b in pairwise(points):
+                _deck_strip(batch, a, b, side, width, 0.24, "road_surface")
+                _deck_strip(
+                    batch,
+                    a - Vector((0, 0, 0.24)),
+                    b - Vector((0, 0, 0.24)),
+                    side,
+                    width + 0.16,
+                    0.32,
+                    "stone",
+                )
+            # Stone parapet walls with coping caps along both sides.
+            for sign in (-1, 1):
+                edge = side * (sign * (width / 2 - 0.16))
+                for a, b in pairwise(points):
+                    mid = (a + b) * 0.5 + edge
+                    seg = max(0.2, (b - a).length)
+                    tang = (b - a).normalized()
+                    batch.box(
+                        mid + Vector((0, 0, 0.44)),
+                        (seg + 0.04, 0.30, 0.88),
+                        "castle_stone",
+                        (tang, side, Vector((0, 0, 1))),
+                    )
+                    batch.box(
+                        mid + Vector((0, 0, 0.92)),
+                        (seg + 0.06, 0.38, 0.10),
+                        "stone_light",
+                        (tang, side, Vector((0, 0, 1))),
+                    )
+            # Cutwater piers and stone arch ribs spanning the river.
+            span_len = math.dist(path[0][:2], path[-1][:2])
+            arches = max(2, round(span_len / 9.0))
+            pier_pts = [
+                path[0].lerp(path[-1], k / arches) for k in range(arches + 1)
+            ]
+            for idx, p in enumerate(pier_pts):
+                if 0 < idx < arches:
+                    bot = min(p.z - 1.2, height(p.x, p.y) - 0.8)
+                    ph = p.z - 0.25 - bot
+                    batch.box(
+                        Vector((p.x, p.y, bot + ph / 2)),
+                        (1.65, width + 0.95, ph),
+                        "castle_stone",
+                        (along, side, Vector((0, 0, 1))),
+                    )
+                    # Pointed upstream/downstream cutwater noses.
+                    for sign in (-1, 1):
+                        nose = Vector((p.x, p.y, bot + ph * 0.42)) + side * (
+                            sign * (width / 2 + 0.65)
+                        )
+                        batch.box(
+                            nose,
+                            (1.05, 0.95, ph * 0.85),
+                            "stone",
+                            (
+                                (along + side).normalized(),
+                                (side - along).normalized(),
+                                Vector((0, 0, 1)),
+                            ),
+                        )
             for p, sign in ((path[0], 1), (path[-1], -1)):
                 p = p + along * sign * 2.1
                 batch.box(
                     p - Vector((0, 0, 0.67)),
-                    (3.7, width + 0.5, 1.05),
+                    (3.7, width + 0.7, 1.15),
                     "stone",
                     (along, side, (0, 0, 1)),
                 )
-        elif feature.kind == "LANDING":
-            _railing(batch, path, -side, width, spacing=3.25)
+            # Build a riverbank watermill beside the town bridgehead.
+            mill_pos = path[0] + along * 4.4 + side * (width / 2 + 6.4)
+            mill_batch = MeshBatch(site.id + "_Watermill", materials, 0.012)
+            build_watermill(
+                mill_batch,
+                mill_pos,
+                side,
+                -along,
+                feature.water_level,
+            )
+            mill_obj = _finish(mill_batch, collection, root, "world_watermill")
+            if mill_obj:
+                mill_obj["site_id"] = site.id
+        else:
+            points = tuple(Vector(p) for p in resample(timber, 0.48))
+            for i, (a, b) in enumerate(pairwise(points)):
+                _deck_strip(
+                    batch,
+                    a,
+                    b,
+                    side,
+                    width,
+                    0.18,
+                    "wood" if i % 5 else "stair_wood",
+                )
+            posts = resample(timber, 5.0 if feature.kind == "QUAY" else 6.0)
+            _supports(batch, posts, side, width, height, "timber")
+            for a, b in pairwise(timber):
+                for offset in (-0.35, 0.35):
+                    beam = side * (width * offset) - Vector((0, 0, 0.27))
+                    batch.beam(a + beam, b + beam, 0.30, "timber")
+            if feature.kind == "BRIDGE":
+                for normal in (side, -side):
+                    _railing(batch, path, normal, width, material="timber")
+                for p, sign in ((path[0], 1), (path[-1], -1)):
+                    p = p + along * sign * 2.1
+                    batch.box(
+                        p - Vector((0, 0, 0.67)),
+                        (3.7, width + 0.5, 1.05),
+                        "stone",
+                        (along, side, (0, 0, 1)),
+                    )
+            elif feature.kind == "LANDING":
+                _railing(batch, path, -side, width, spacing=3.25)
         if feature.kind != "BRIDGE":
             for sign in (-1, 1):
                 for fraction in (0.51, 0.92):

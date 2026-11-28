@@ -1,0 +1,230 @@
+{
+  "seed": 73,
+  "art_style": "REALISTIC",
+  "size": [2200, 1700],
+  "terrain_step": 8,
+  "base_elevation": 24,
+  "relief": 13,
+  "snowline": 138,
+  "grass_density": 0.9,
+  "coast": {
+    "side": "WEST",
+    "position": -860,
+    "waviness": 72,
+    "depth": 28
+  },
+  "regions": [
+    {
+      "kind": "DESERT",
+      "centre": [690, -560],
+      "radii": [430, 290],
+      "heading": 26,
+      "elevation": 36
+    },
+    {
+      "kind": "MARSH",
+      "centre": [-520, -575],
+      "radii": [305, 220],
+      "heading": -12,
+      "elevation": 8,
+      "max_elevation": 22
+    },
+    {
+      "kind": "PLAIN",
+      "centre": [95, -590],
+      "radii": [225, 180],
+      "elevation": 18,
+      "max_elevation": 32
+    },
+    {
+      "kind": "MOUNTAIN_RANGE",
+      "centre": [-430, 395],
+      "radii": [460, 195],
+      "heading": -34,
+      "max_elevation": 222
+    },
+    {
+      "kind": "MOUNTAIN_RANGE",
+      "centre": [485, 395],
+      "radii": [480, 200],
+      "heading": 32,
+      "max_elevation": 236
+    },
+    {
+      "kind": "MOUNTAIN",
+      "centre": [0, 20],
+      "radii": [415, 375],
+      "heading": 12,
+      "max_elevation": 315
+    },
+    {
+      "kind": "CANYON",
+      "centre": [595, -245],
+      "radii": [490, 175],
+      "heading": -32,
+      "elevation": 10,
+      "max_elevation": 66
+    }
+  ],
+  "lakes": [
+    {
+      "id": "highland_lake",
+      "kind": "LAKE",
+      "centre": [115, -585],
+      "radii": [145, 98],
+      "level": 15.5,
+      "depth": 12.0
+    },
+    {
+      "id": "glacier_tarn",
+      "kind": "POND",
+      "centre": [-65, -285],
+      "radii": [36, 26],
+      "level": 17.0,
+      "depth": 4.2
+    },
+    {
+      "id": "meadow_pond",
+      "kind": "POND",
+      "centre": [-535, 95],
+      "radii": [30, 22],
+      "level": 23.0,
+      "depth": 3.4
+    },
+    {
+      "id": "mire_pool",
+      "kind": "MARSH_POOL",
+      "centre": [-525, -580],
+      "radii": [38, 28],
+      "level": 7.0,
+      "depth": 2.0
+    }
+  ],
+  "rivers": [
+    {
+      "id": "great_river",
+      "kind": "RIVER",
+      "width": 34,
+      "depth": 4.8,
+      "points": [
+        [-65, -285, 17.0],
+        [-225, -310, 13.0],
+        [-415, -250, 9.5],
+        [-600, -315, 5.5],
+        [-775, -255, 2.0],
+        [-940, -285, 0.0]
+      ]
+    },
+    {
+      "id": "rift_river",
+      "kind": "RIVER",
+      "width": 22,
+      "depth": 3.4,
+      "points": [
+        [307, -40, 10.0],
+        [455, -136, 8.8],
+        [600, -237, 7.6],
+        [722, -374, 6.4],
+        [871, -469, 5.2]
+      ]
+    },
+    {
+      "id": "mountain_brook",
+      "kind": "STREAM",
+      "width": 8,
+      "depth": 1.6,
+      "points": [
+        [-445, 195, 24.0],
+        [-405, 85, 18.0],
+        [-385, -30, 14.0],
+        [-395, -140, 11.5],
+        [-415, -250, 9.5]
+      ]
+    }
+  ],
+  "caves": [
+    {
+      "id": "ridge_grotto",
+      "centre": [-285, 240],
+      "heading": -135,
+      "width": 5.4,
+      "height": 4.2,
+      "depth": 14.0
+    },
+    {
+      "id": "canyon_cavern",
+      "centre": [475, -230],
+      "heading": 60,
+      "width": 5.0,
+      "height": 4.0,
+      "depth": 13.0
+    }
+  ],
+  "settlements": [
+    {
+      "id": "citadel_ford",
+      "profile": "RIVERSIDE",
+      "near": [-290, -180],
+      "search_radius": 115,
+      "settlement": {
+        "seed": 108,
+        "scale": "CITY",
+        "radius": 88,
+        "max_buildings": 48,
+        "walls": "ON",
+        "castle": "ON",
+        "detail": "HIGH",
+        "terrain_step": 3.0,
+        "grass_density": 0.9
+      }
+    },
+    {
+      "id": "west_haven",
+      "profile": "HARBOR",
+      "near": [-745, 195],
+      "search_radius": 135,
+      "settlement": {
+        "seed": 24,
+        "scale": "TOWN",
+        "radius": 58,
+        "max_buildings": 36,
+        "walls": "ON",
+        "detail": "HIGH",
+        "terrain_step": 3.0,
+        "grass_density": 0.9
+      }
+    },
+    {
+      "id": "high_watch",
+      "profile": "MOUNTAIN",
+      "near": [510, 165],
+      "search_radius": 195,
+      "settlement": {
+        "seed": 51,
+        "scale": "VILLAGE",
+        "radius": 44,
+        "max_buildings": 22,
+        "walls": "OFF",
+        "detail": "HIGH",
+        "terrain_step": 3.0,
+        "grass_density": 0.9
+      }
+    },
+    {
+      "id": "willow_mere",
+      "profile": "LAKESIDE",
+      "near": [-75, -580],
+      "search_radius": 120,
+      "settlement": {
+        "seed": 48,
+        "scale": "VILLAGE",
+        "radius": 42,
+        "max_buildings": 20,
+        "walls": "OFF",
+        "detail": "HIGH",
+        "terrain_step": 3.0,
+        "grass_density": 0.9
+      }
+    }
+  ]
+}

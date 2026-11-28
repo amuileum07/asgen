@@ -154,6 +154,25 @@ class WorldTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_elevation"):
             Region("VALLEY", (0, 0), (30, 70))
 
+    def test_monumental_realistic_world_preset_builds_cleanly(self):
+        preset = CODE / "presets" / "world_monumental_realistic.json"
+        cfg = WorldConfig.from_dict(json.loads(preset.read_text()))
+        plan = make_world(cfg)
+        self.assertEqual(len(plan.sites), 4)
+        self.assertTrue(plan.config.caves)
+        self.assertTrue(any(r.kind == "STREAM" for r in plan.config.rivers))
+        self.assertTrue(any(lk.kind == "POND" for lk in plan.config.lakes))
+        for site in plan.sites:
+            self.assertTrue(site.settlement.buildings)
+            if site.settlement.markets:
+                self.assertTrue(
+                    any(
+                        a.kind == "BELL_TOWER"
+                        for a in site.settlement.civic_assets
+                    ),
+                    site.id,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

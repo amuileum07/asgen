@@ -16,6 +16,10 @@ from art_style import preview_engine
 from civic_blender import add_tree, build_grass_meshes, ground_cast
 from civic_rules import grass_cells, grass_samples, meadow_growth
 from house_generator import MeshBatch, _linear_color
+from realistic_materials import (
+    configure_realistic_cycles,
+    configure_realistic_sky,
+)
 from surface_blender import TerrainSkin, paint_land, set_edge_normals
 from surface_quality import SurfaceGradeError
 from terrain_detail import refine_slopes
@@ -27,6 +31,11 @@ from terrain_rules import (
 )
 from tree_blender import TreeLibrary
 from world_landmarks import build_landmark
+from world_nature_blender import (
+    add_cave_mouth,
+    add_crag_boulder,
+    add_reed_clump,
+)
 from world_rules import (
     LandmarkGradeError,
     choose_site,
@@ -37,19 +46,34 @@ from world_rules import (
 PALETTE = {
     label: _linear_color(colour)[:3]
     for label, colour in {
-        "grass": "789d58",
-        "meadow": "a2b76f",
-        "wet_grass": "619366",
-        "rock": "8b8584",
+        "grass": "648c4a",
+        "meadow": "94ab5f",
+        "forest_moss": "47693a",
+        "highland_heather": "79824f",
+        "wet_grass": "57875c",
+        "rock": "7c7773",
+        "alpine_rock": "52575e",
         "sand": "cbb38b",
-        "silt": "90836d",
-        "snow": "e1e9e8",
+        "desert_sand": "dcb577",
+        "desert_dune": "b27c43",
+        "canyon_deep": "743c28",
+        "canyon_red": "a55838",
+        "canyon_strata": "cfa06f",
+        "marsh_peat": "3b4630",
+        "marsh_moss": "586a40",
+        "silt": "887c68",
+        "snow": "e6eeee",
         "surf": "8ebdc0",
-        "ocean": "437e93",
-        "lake_edge": "78acad",
-        "lake_deep": "4b8692",
-        "river_edge": "8ab1ac",
-        "river_deep": "548a96",
+        "ocean": "3d778d",
+        "lake_edge": "70a8aa",
+        "lake_deep": "3e7989",
+        "pond_edge": "557864",
+        "pond_deep": "314e46",
+        "marsh_water": "35493a",
+        "river_edge": "7ea8a6",
+        "river_deep": "457e8c",
+        "stream_edge": "92b5ae",
+        "stream_deep": "52878d",
     }.items()
 }
 MEADOW_RADII = (32.0, 24.0)
@@ -63,29 +87,74 @@ def _colour(terrain, x, y, height=None):
     config = terrain.config
     height = height or terrain.height
     level = height(x, y)
-    slope = math.hypot(
-        *ground_gradient(height, x, y, config.terrain_step * 0.42)
-    )
+    gx, gy = ground_gradient(height, x, y, config.terrain_step * 0.42)
+    slope = math.hypot(gx, gy)
     noise = value_noise(x / 46, y / 46, config.seed + 417)
+    macro = value_noise(x / 135, y / 135, config.seed + 523)
     fleck = value_noise(x / 16, y / 16, config.seed + 214)
     growth = meadow_growth(x, y, config.seed)
-    warmth = 0.72 * smoothstep(-0.42, 0.78, noise) + 0.28 * growth
+    warmth = 0.68 * smoothstep(-0.45, 0.78, noise) + 0.32 * growth
     rgb = _mix(PALETTE["grass"], PALETTE["meadow"], warmth)
-    rgb = tuple(c * (1 + fleck * 0.09) for c in rgb)
-    rock = smoothstep(0.40, 0.94, slope)
+    rgb = _mix(
+        rgb, PALETTE["forest_moss"], smoothstep(0.15, 0.85, macro) * 0.42
+    )
+    heather = smoothstep(55, config.snowline - 15, level)
+    rgb = _mix(rgb, PALETTE["highland_heather"], heather * 0.55)
+    rgb = tuple(c * (1 + fleck * 0.10) for c in rgb)
+    rock = smoothstep(0.38, 0.92, slope)
+    alpine = smoothstep(82, config.snowline + 12, level)
     strata = value_noise(x / 29 + level / 14, y / 43, config.seed + 48)
-    stone = tuple(c * (1 + 0.23 * strata) for c in PALETTE["rock"])
+    rock_base = _mix(PALETTE["rock"], PALETTE["alpine_rock"], alpine)
+    stone = tuple(c * (1 + 0.34 * strata) for c in rock_base)
     rgb = _mix(rgb, stone, rock)
     snowy = smoothstep(
-        config.snowline - 4, config.snowline + 28, level + fleck * 7
+        config.snowline - 12, config.snowline + 26, level + fleck * 11
     )
-    rgb = _mix(rgb, PALETTE["snow"], snowy * (1 - rock * 0.27))
+    # Shed snow off sheer cliffs so dark alpine ridges pierce through.
+    cliff_shed = smoothstep(0.82, 1.48, slope)
+    rgb = _mix(rgb, PALETTE["snow"], snowy * (1 - cliff_shed * 0.68))
     grassy = snowy < 0.32 and slope < 0.63
+    for region in config.regions:
+        if region.kind not in ("DESERT", "CANYON", "MARSH"):
+            continue
+        dist = region.distance(x, y)
+        if dist >= 1.15:
+            continue
+        w = 1 - smoothstep(0.52, 1.15, dist)
+        if region.kind == "DESERT":
+            slip = smoothstep(-0.22, 0.34, gx * 0.7 + gy * 0.7 + fleck * 0.25)
+            dune_c = _mix(PALETTE["desert_sand"], PALETTE["desert_dune"], slip)
+            rgb = _mix(rgb, dune_c, w)
+            grassy &= w < 0.40
+        elif region.kind == "CANYON":
+            band = 0.5 + 0.5 * math.sin(level * 0.34 + fleck * 1.1)
+            band2 = 0.5 + 0.5 * math.sin(level * 0.85 - fleck * 0.7)
+            canyon_c = _mix(
+                PALETTE["canyon_red"], PALETTE["canyon_strata"], band
+            )
+            canyon_c = _mix(
+                canyon_c, PALETTE["canyon_deep"], band2 * 0.45 * rock
+            )
+            rgb = _mix(rgb, canyon_c, w * (0.68 + 0.32 * rock))
+            grassy &= w < 0.35
+        elif region.kind == "MARSH":
+            bog_c = _mix(
+                PALETTE["marsh_peat"],
+                PALETTE["marsh_moss"],
+                smoothstep(-0.5, 0.5, noise),
+            )
+            rgb = _mix(rgb, bog_c, w * 0.88)
     waters = terrain.water_near(x, y)
     if waters:
         water = min(waters, key=lambda w: w.distance)
         if water.kind == "SEA":
             tint, bank = PALETTE["sand"], 10.5
+        elif water.kind in ("POND", "MARSH_POOL"):
+            tint = _mix(PALETTE["marsh_peat"], PALETTE["marsh_moss"], 0.42)
+            bank = 3.2
+        elif water.kind == "STREAM":
+            tint = _mix(PALETTE["silt"], PALETTE["rock"], 0.35)
+            bank = 2.6
         else:
             tint = _mix(PALETTE["silt"], PALETTE["wet_grass"], 0.40)
             bank = 4.4
@@ -208,8 +277,11 @@ def _water_colour(kind, depth):
     rim, centre, limit = {
         "SEA": ("surf", "ocean", 8.5),
         "LAKE": ("lake_edge", "lake_deep", 4.6),
+        "POND": ("pond_edge", "pond_deep", 2.2),
+        "MARSH_POOL": ("marsh_water", "pond_deep", 1.5),
         "RIVER": ("river_edge", "river_deep", 2.2),
-    }[kind]
+        "STREAM": ("stream_edge", "stream_deep", 1.2),
+    }.get(kind, ("lake_edge", "lake_deep", 4.0))
     return (
         *_mix(PALETTE[rim], PALETTE[centre], smoothstep(0, limit, depth)),
         1,
@@ -466,6 +538,11 @@ def _trees(plan, project, collection, root, materials):
                 continue
             if not _outside_settlements(plan, x, y) or terrain.wet(x, y, 9):
                 continue
+            if any(
+                r.kind in ("DESERT", "CANYON") and r.distance(x, y) < 0.92
+                for r in plan.config.regions
+            ):
+                continue
             hit, normal, *_ = project(x, y)
             if (
                 hit is None
@@ -498,6 +575,88 @@ def _trees(plan, project, collection, root, materials):
     ):
         limbs["collision_enabled"] = False
         limbs["export_chunk_size"] = 128
+
+
+def _world_rocks_reeds_and_caves(plan, project, collection, root, materials):
+    """Scatter alpine crags, bank boulders, marsh reeds, and caves."""
+    realistic = plan.config.art_style == "REALISTIC"
+    rng = random.Random(f"{plan.config.seed}:world-nature-props")
+    rocks = MeshBatch("World_Boulders", materials, 0.02 if realistic else 0.0)
+    reeds = MeshBatch("World_Reeds", materials)
+    grid, terrain = plan.grid, plan.terrain
+    step = max(14.0, math.sqrt(math.prod(grid.size) / 8_500))
+    nx, ny = (math.floor(size / step) for size in grid.size)
+    for i in range(nx):
+        for j in range(ny):
+            x = (i + rng.uniform(0.15, 0.85)) * step - grid.size[0] / 2
+            y = (j + rng.uniform(0.15, 0.85)) * step - grid.size[1] / 2
+            if not _outside_settlements(plan, x, y):
+                continue
+            hit, normal, *_ = project(x, y)
+            if hit is None:
+                continue
+            waters = terrain.water_near(x, y, 6.0)
+            nearest = min(waters, key=lambda w: w.distance) if waters else None
+            in_marsh = any(
+                r.kind == "MARSH" and r.distance(x, y) < 0.95
+                for r in plan.config.regions
+            )
+            near_shore = nearest is not None and 0.2 <= nearest.distance <= 4.5
+            if (
+                realistic
+                and (
+                    in_marsh
+                    or (
+                        near_shore
+                        and nearest.kind
+                        in ("POND", "MARSH_POOL", "STREAM", "LAKE", "RIVER")
+                    )
+                )
+                and rng.random() < (0.55 if in_marsh else 0.35)
+            ):
+                add_reed_clump(reeds, hit, rng)
+                continue
+            if terrain.wet(x, y, 0.5):
+                continue
+            steep = normal.z < 0.86
+            near_stream = near_shore and nearest.kind in ("STREAM", "RIVER")
+            if realistic and (steep or near_stream) and rng.random() < 0.34:
+                scale = (
+                    rng.uniform(0.55, 1.85)
+                    if steep
+                    else rng.uniform(0.35, 0.95)
+                )
+                add_crag_boulder(
+                    rocks,
+                    x,
+                    y,
+                    hit.z,
+                    scale,
+                    rng,
+                    realistic=True,
+                    material="rock" if steep else "rock_light",
+                )
+    if obj := towns._finish(rocks, collection, root, "natural_stone"):
+        obj["export_chunk_size"] = 128
+    if obj := towns._finish(reeds, collection, root, "world_reeds"):
+        obj["collision_enabled"] = False
+        obj["export_chunk_size"] = 128
+
+    if plan.config.caves:
+        caves = MeshBatch("World_Caves", materials, 0.02 if realistic else 0.0)
+        for cave in plan.config.caves:
+            cave_rng = random.Random(f"{plan.config.seed}:cave:{cave.id}")
+            add_cave_mouth(
+                caves,
+                cave.centre,
+                cave.heading,
+                cave.width,
+                cave.height,
+                cave.depth,
+                terrain.height,
+                cave_rng,
+            )
+        towns._finish(caves, collection, root, "natural_stone")
 
 
 def _realize_site(plan, initial, occupied, collection, root, scene, materials):
@@ -619,9 +778,13 @@ def build_world(plan, *, scene=None):
                 root,
                 materials,
                 towns._finish,
+                realistic=plan.config.art_style == "REALISTIC",
             )
             root["meadow_views_json"] = json.dumps(fields)
         _trees(plan, project, collection, root, materials)
+        _world_rocks_reeds_and_caves(
+            plan, project, collection, root, materials
+        )
         summary = [
             {
                 "id": s.id,
@@ -807,10 +970,18 @@ def preview_world(collection, root, focus=None, *, meadow=False):
     camera_data.lens = 32
     camera_data.ortho_scale, camera_data.clip_end = framing, span * 8
     camera_data.clip_start = 0.08 if meadow else 0.1
+    art_style = config.get("art_style", "REALISTIC")
+    realistic = art_style == "REALISTIC"
     sun_data = bpy.data.lights.new("World_Sun", "SUN")
-    sun_data.energy = 3.4 if meadow else 2.8
-    sun_data.angle = math.radians(7 if meadow else 9)
-    sun_data.color = (1.0, 0.86, 0.69) if meadow else (1.0, 0.94, 0.81)
+    sun_data.energy = (
+        (4.2 if meadow else 3.6) if realistic else (3.4 if meadow else 2.8)
+    )
+    sun_data.angle = math.radians(0.85 if realistic else (7 if meadow else 9))
+    sun_data.color = (
+        (1.0, 0.88, 0.72)
+        if meadow
+        else ((1.0, 0.91, 0.78) if realistic else (1.0, 0.94, 0.81))
+    )
     sun = bpy.data.objects.new("World_Sun", sun_data)
     collection.objects.link(sun)
     towns._owned(sun, generation)
@@ -819,15 +990,34 @@ def preview_world(collection, root, focus=None, *, meadow=False):
     sun.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
     scene = bpy.context.scene
     scene.camera = camera
-    _preview_sky(scene)
-    scene.render.engine = preview_engine(config.get("art_style", "REALISTIC"))
-    scene.cycles.samples, scene.cycles.use_denoising = 16, True
+    if realistic:
+        if not scene.world or not scene.world.get("procedural_world_lighting"):
+            scene.world = bpy.data.worlds.new("World_Sky")
+            scene.world["procedural_world_lighting"] = True
+        sun_dir = -direction.normalized()
+        elev = max(
+            8.0, math.degrees(math.asin(max(-1.0, min(1.0, sun_dir.z))))
+        )
+        rot = math.degrees(math.atan2(sun_dir.x, sun_dir.y))
+        configure_realistic_sky(
+            scene.world,
+            sun_elevation=elev,
+            sun_rotation=rot,
+            sun_disc=False,
+        )
+        configure_realistic_cycles(
+            scene, samples=48, exposure=0.10 if meadow else 0.0
+        )
+    else:
+        _preview_sky(scene)
+        scene.render.engine = preview_engine(art_style)
+        scene.cycles.samples, scene.cycles.use_denoising = 16, True
+        scene.view_settings.view_transform = "AgX"
+        scene.view_settings.look = "AgX - Medium High Contrast"
+        scene.view_settings.exposure = 0.20 if meadow else 0
     scene.render.resolution_x, scene.render.resolution_y = 1600, 1150
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-    scene.view_settings.view_transform = "AgX"
-    scene.view_settings.look = "AgX - Medium High Contrast"
-    scene.view_settings.exposure = 0.20 if meadow else 0
     _meadow_haze(scene, meadow)
     for screen in bpy.data.screens:
         for area in screen.areas:

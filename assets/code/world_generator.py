@@ -338,6 +338,11 @@ def main(argv=None):
         args.map.resolve().parent.mkdir(parents=True, exist_ok=True)
         args.map.write_text(layout_svg(plan), encoding="utf-8")
     if args.render:
+        if bpy.app.background:
+            for name in ("Cube", "Light"):
+                obj = bpy.data.objects.get(name)
+                if obj is not None:
+                    obj.hide_render = True
         args.render.resolve().parent.mkdir(parents=True, exist_ok=True)
         bpy.context.scene.render.filepath = str(args.render.resolve())
     if args.output:

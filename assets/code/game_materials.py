@@ -5,6 +5,16 @@ import random
 
 import bpy
 
+from realistic_materials import (
+    build_pbr_surface_group,
+    configure_pbr_shader_extras,
+    configure_realistic_bark,
+    configure_realistic_grass,
+    configure_realistic_paving,
+    configure_realistic_terrain,
+    configure_realistic_water,
+)
+
 SHARED_IMAGE = "procedural_game_surface"
 
 
@@ -136,8 +146,9 @@ def paving_images(size=256):
 
 
 def _architecture_surface(kind, realistic):
-    prefix = "Asgen PBR" if realistic else "Asgen Painted"
-    name = f"{prefix} {kind.title()} Surface"
+    if realistic:
+        return build_pbr_surface_group(kind)
+    name = f"Asgen Painted {kind.title()} Surface"
     if group := bpy.data.node_groups.get(name):
         return group
     group = bpy.data.node_groups.new(name, "ShaderNodeTree")
@@ -208,7 +219,7 @@ def _architecture_surface(kind, realistic):
 
     color = nodes.new("ShaderNodeMixRGB")
     color.blend_type = "MULTIPLY"
-    color.inputs[0].default_value = 1.0 if realistic else 0.28
+    color.inputs[0].default_value = 0.28
     color.location = (390, 180)
     links.new(tint.outputs["Tint"], color.inputs[1])
     links.new(shade, color.inputs[2])
@@ -226,22 +237,6 @@ def _architecture_surface(kind, realistic):
     bump.inputs["Distance"].default_value = depth
     links.new(detail.outputs["Fac"], bump.inputs["Height"])
     links.new(bump.outputs["Normal"], output.inputs["Normal"])
-    if realistic:
-        group.interface.new_socket(
-            name="Roughness", in_out="OUTPUT", socket_type="NodeSocketFloat"
-        )
-        roughness = nodes.new("ShaderNodeMapRange")
-        roughness.location = (390, -310)
-        low, high = {
-            "timber": (0.36, 0.78),
-            "clay": (0.50, 0.87),
-            "plaster": (0.74, 0.97),
-            "stone": (0.59, 0.94),
-        }[kind]
-        roughness.inputs["To Min"].default_value = low
-        roughness.inputs["To Max"].default_value = high
-        links.new(detail.outputs["Fac"], roughness.inputs["Value"])
-        links.new(roughness.outputs["Result"], output.inputs["Roughness"])
     return group
 
 
@@ -260,6 +255,10 @@ def configure_architecture_surface(material, shader, kind, *, realistic=False):
         "timber": 0.68,
         "clay": 0.81,
         "stone": 0.86,
+        "rock": 0.88,
+        "slate": 0.52,
+        "metal": 0.36,
+        "fabric": 0.88,
     }[kind]
     tree.links.new(surface.outputs["Color"], shader.inputs["Base Color"])
     tree.links.new(surface.outputs["Normal"], shader.inputs["Normal"])
@@ -267,33 +266,37 @@ def configure_architecture_surface(material, shader, kind, *, realistic=False):
         tree.links.new(
             surface.outputs["Roughness"], shader.inputs["Roughness"]
         )
+        configure_pbr_shader_extras(shader, kind)
 
 
-def configure_surface_materials(materials, shader_for):
+def configure_surface_materials(materials, shader_for, *, realistic=False):
     if bark := materials.get("bark"):
         shader = shader_for(bark)
-        tree = bark.node_tree
-        coords = tree.nodes.new("ShaderNodeTexCoord")
-        scale = tree.nodes.new("ShaderNodeVectorMath")
-        scale.operation = "MULTIPLY"
-        scale.inputs[1].default_value = (29.0, 29.0, 3.2)
-        furrows = tree.nodes.new("ShaderNodeTexNoise")
-        furrows.inputs["Scale"].default_value = 1.0
-        furrows.inputs["Detail"].default_value = 2.8
-        tint = tree.nodes.new("ShaderNodeValToRGB")
-        tint.color_ramp.elements[0].color = (0.042, 0.028, 0.018, 1)
-        tint.color_ramp.elements[1].color = (0.25, 0.19, 0.13, 1)
-        bump = tree.nodes.new("ShaderNodeBump")
-        bump.inputs["Distance"].default_value = 0.014
-        for source, target in (
-            (coords.outputs["Object"], scale.inputs[0]),
-            (scale.outputs[0], furrows.inputs["Vector"]),
-            (furrows.outputs["Fac"], tint.inputs[0]),
-            (tint.outputs[0], shader.inputs["Base Color"]),
-            (furrows.outputs["Fac"], bump.inputs["Height"]),
-            (bump.outputs[0], shader.inputs["Normal"]),
-        ):
-            tree.links.new(source, target)
+        if realistic:
+            configure_realistic_bark(bark, shader)
+        else:
+            tree = bark.node_tree
+            coords = tree.nodes.new("ShaderNodeTexCoord")
+            scale = tree.nodes.new("ShaderNodeVectorMath")
+            scale.operation = "MULTIPLY"
+            scale.inputs[1].default_value = (29.0, 29.0, 3.2)
+            furrows = tree.nodes.new("ShaderNodeTexNoise")
+            furrows.inputs["Scale"].default_value = 1.0
+            furrows.inputs["Detail"].default_value = 2.8
+            tint = tree.nodes.new("ShaderNodeValToRGB")
+            tint.color_ramp.elements[0].color = (0.042, 0.028, 0.018, 1)
+            tint.color_ramp.elements[1].color = (0.25, 0.19, 0.13, 1)
+            bump = tree.nodes.new("ShaderNodeBump")
+            bump.inputs["Distance"].default_value = 0.014
+            for source, target in (
+                (coords.outputs["Object"], scale.inputs[0]),
+                (scale.outputs[0], furrows.inputs["Vector"]),
+                (furrows.outputs["Fac"], tint.inputs[0]),
+                (tint.outputs[0], shader.inputs["Base Color"]),
+                (furrows.outputs["Fac"], bump.inputs["Height"]),
+                (bump.outputs[0], shader.inputs["Normal"]),
+            ):
+                tree.links.new(source, target)
     meadow, bare = meadow_images()
     for key in ("terrain", "bare_terrain", "world_water"):
         material = materials[key]
@@ -311,8 +314,23 @@ def configure_surface_materials(materials, shader_for):
             tree.links.new(tex.outputs["Color"], mix.inputs[2])
             output = mix.outputs["Color"]
             material["albedo_texture"] = tex.image.name
-        tree.links.new(output, shader.inputs["Base Color"])
+            if realistic:
+                configure_realistic_terrain(
+                    material, shader, output, bare=key == "bare_terrain"
+                )
+            else:
+                tree.links.new(output, shader.inputs["Base Color"])
+        else:
+            tree.links.new(output, shader.inputs["Base Color"])
+            if realistic:
+                configure_realistic_water(material, shader)
         material["uses_vertex_color"] = True
+    if realistic:
+        for key in ("water", "well_water"):
+            if key in materials:
+                configure_realistic_water(
+                    materials[key], shader_for(materials[key])
+                )
     albedo, normal = paving_images()
     for key in ("road_surface", "plaza_surface"):
         material = materials[key]
@@ -320,13 +338,23 @@ def configure_surface_materials(materials, shader_for):
         shader = shader_for(material)
         texture = tree.nodes.new("ShaderNodeTexImage")
         texture.image = albedo
-        tree.links.new(texture.outputs["Color"], shader.inputs["Base Color"])
         ntex = tree.nodes.new("ShaderNodeTexImage")
         ntex.image = normal
         mapping = tree.nodes.new("ShaderNodeNormalMap")
-        mapping.inputs["Strength"].default_value = 0.45
+        mapping.inputs["Strength"].default_value = 0.72 if realistic else 0.45
         tree.links.new(ntex.outputs["Color"], mapping.inputs["Color"])
-        tree.links.new(mapping.outputs["Normal"], shader.inputs["Normal"])
+        if realistic:
+            configure_realistic_paving(
+                material,
+                shader,
+                texture.outputs["Color"],
+                mapping.outputs["Normal"],
+            )
+        else:
+            tree.links.new(
+                texture.outputs["Color"], shader.inputs["Base Color"]
+            )
+            tree.links.new(mapping.outputs["Normal"], shader.inputs["Normal"])
         material["albedo_texture"] = albedo.name
         material["normal_texture"] = normal.name
     if "grass_tuft" in materials:
@@ -335,52 +363,60 @@ def configure_surface_materials(materials, shader_for):
         shader = shader_for(grass)
         color = tree.nodes.new("ShaderNodeVertexColor")
         color.layer_name = "Color"
-        tree.links.new(color.outputs["Color"], shader.inputs["Base Color"])
-        shader.inputs["Roughness"].default_value = 0.72
-        uv = tree.nodes.new("ShaderNodeTexCoord")
-        height = tree.nodes.new("ShaderNodeSeparateXYZ")
-        transmission = tree.nodes.new("ShaderNodeMapRange")
-        transmission.inputs["To Min"].default_value = 0.12
-        transmission.inputs["To Max"].default_value = 0.47
-        tree.links.new(uv.outputs["UV"], height.inputs["Vector"])
-        tree.links.new(height.outputs["Y"], transmission.inputs["Value"])
-        tree.links.new(color.outputs["Color"], shader.inputs["Emission Color"])
-        tree.links.new(
-            transmission.outputs["Result"], shader.inputs["Emission Strength"]
-        )
-        if "Specular IOR Level" in shader.inputs:
-            shader.inputs["Specular IOR Level"].default_value = 0.14
-        if "Subsurface Weight" in shader.inputs:
-            shader.inputs["Subsurface Weight"].default_value = 0.0
+        if realistic:
+            configure_realistic_grass(grass, shader, color.outputs["Color"])
+        else:
+            tree.links.new(color.outputs["Color"], shader.inputs["Base Color"])
+            shader.inputs["Roughness"].default_value = 0.72
+            uv = tree.nodes.new("ShaderNodeTexCoord")
+            height = tree.nodes.new("ShaderNodeSeparateXYZ")
+            transmission = tree.nodes.new("ShaderNodeMapRange")
+            transmission.inputs["To Min"].default_value = 0.12
+            transmission.inputs["To Max"].default_value = 0.47
+            tree.links.new(uv.outputs["UV"], height.inputs["Vector"])
+            tree.links.new(height.outputs["Y"], transmission.inputs["Value"])
+            tree.links.new(
+                color.outputs["Color"], shader.inputs["Emission Color"]
+            )
+            tree.links.new(
+                transmission.outputs["Result"],
+                shader.inputs["Emission Strength"],
+            )
+            if "Specular IOR Level" in shader.inputs:
+                shader.inputs["Specular IOR Level"].default_value = 0.14
+            if "Subsurface Weight" in shader.inputs:
+                shader.inputs["Subsurface Weight"].default_value = 0.0
 
-        # Add downward-normal translucency so blade backs catch sky
-        # light in Cycles without dark shadow-terminator artifacts.
-        down_vec = tree.nodes.new("ShaderNodeCombineXYZ")
-        down_vec.inputs["X"].default_value = 0.0
-        down_vec.inputs["Y"].default_value = 0.0
-        down_vec.inputs["Z"].default_value = -1.0
+            # Add downward-normal translucency so blade backs catch sky
+            # light in Cycles without dark shadow-terminator artifacts.
+            down_vec = tree.nodes.new("ShaderNodeCombineXYZ")
+            down_vec.inputs["X"].default_value = 0.0
+            down_vec.inputs["Y"].default_value = 0.0
+            down_vec.inputs["Z"].default_value = -1.0
 
-        trans = tree.nodes.new("ShaderNodeBsdfTranslucent")
-        tree.links.new(color.outputs["Color"], trans.inputs["Color"])
-        tree.links.new(down_vec.outputs["Vector"], trans.inputs["Normal"])
+            trans = tree.nodes.new("ShaderNodeBsdfTranslucent")
+            tree.links.new(color.outputs["Color"], trans.inputs["Color"])
+            tree.links.new(down_vec.outputs["Vector"], trans.inputs["Normal"])
 
-        foliage = tree.nodes.new("ShaderNodeMixShader")
-        foliage.inputs["Fac"].default_value = 0.44
-        tree.links.new(shader.outputs["BSDF"], foliage.inputs[1])
-        tree.links.new(trans.outputs["BSDF"], foliage.inputs[2])
+            foliage = tree.nodes.new("ShaderNodeMixShader")
+            foliage.inputs["Fac"].default_value = 0.44
+            tree.links.new(shader.outputs["BSDF"], foliage.inputs[1])
+            tree.links.new(trans.outputs["BSDF"], foliage.inputs[2])
 
-        light_path = tree.nodes.new("ShaderNodeLightPath")
-        shadow_tr = tree.nodes.new("ShaderNodeBsdfTransparent")
-        shadow_tr.inputs["Color"].default_value = (0.94, 0.97, 0.91, 1.0)
-        final_mix = tree.nodes.new("ShaderNodeMixShader")
-        tree.links.new(
-            light_path.outputs["Is Shadow Ray"], final_mix.inputs["Fac"]
-        )
-        tree.links.new(foliage.outputs["Shader"], final_mix.inputs[1])
-        tree.links.new(shadow_tr.outputs["BSDF"], final_mix.inputs[2])
+            light_path = tree.nodes.new("ShaderNodeLightPath")
+            shadow_tr = tree.nodes.new("ShaderNodeBsdfTransparent")
+            shadow_tr.inputs["Color"].default_value = (0.94, 0.97, 0.91, 1.0)
+            final_mix = tree.nodes.new("ShaderNodeMixShader")
+            tree.links.new(
+                light_path.outputs["Is Shadow Ray"], final_mix.inputs["Fac"]
+            )
+            tree.links.new(foliage.outputs["Shader"], final_mix.inputs[1])
+            tree.links.new(shadow_tr.outputs["BSDF"], final_mix.inputs[2])
 
-        output = next(n for n in tree.nodes if n.type == "OUTPUT_MATERIAL")
-        tree.links.new(final_mix.outputs["Shader"], output.inputs["Surface"])
+            output = next(n for n in tree.nodes if n.type == "OUTPUT_MATERIAL")
+            tree.links.new(
+                final_mix.outputs["Shader"], output.inputs["Surface"]
+            )
         grass["uses_vertex_color"] = True
         grass["foliage_bend_uv"] = "V"
         grass.use_backface_culling = False

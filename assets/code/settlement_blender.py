@@ -28,6 +28,11 @@ from game_materials import (
     configure_surface_materials,
     purge_unused_images,
 )
+from realistic_materials import (
+    configure_realistic_cycles,
+    configure_realistic_foliage,
+    configure_realistic_sky,
+)
 from settlement_rules import (
     SettlementConfig,
     make_settlement,
@@ -144,15 +149,44 @@ def _materials(generation, art_style):
     result = {}
     realistic = art_style == "REALISTIC"
     if realistic:
-        colors.update(bark="635043", leaves_shadow="465c38")
+        colors.update(
+            bark="574538",
+            leaves="4f6a3f",
+            leaves_light="748a4c",
+            leaves_shadow="314626",
+            rock="62655b",
+            rock_light="787a6e",
+            stone="7d7c73",
+            stone_light="9e9b8b",
+            castle_stone="9c8e6f",
+            ashlar_light="a89a7c",
+            ashlar_dark="8d8168",
+            castle_plaster="cec4aa",
+            castle_roof="516570",
+            castle_slate="2f3f49",
+            castle_cone="2f3f49",
+            timber="3c2d21",
+            wood="644730",
+        )
         finishes.update(
-            rock="stone",
-            rock_light="stone",
+            rock="rock",
+            rock_light="rock",
+            castle_slate="slate",
+            castle_cone="slate",
             court_paving="stone",
             interior_wall="plaster",
             interior_floor="timber",
             furniture_wood="timber",
             stair_wood="timber",
+            iron="metal",
+            metal="metal",
+            cloth_red="fabric",
+            cloth_cream="fabric",
+            cloth_blue="fabric",
+            fabric_red="fabric",
+            fabric_blue="fabric",
+            fabric_cream="fabric",
+            flag="fabric",
         )
     for key, color in colors.items():
         material = bpy.data.materials.new("Settlement_" + key)
@@ -172,28 +206,28 @@ def _materials(generation, art_style):
             ].default_value = material.diffuse_color
             shader.inputs["Emission Strength"].default_value = 2.0
             material["emissive_color"] = material.diffuse_color[:3]
-        if key in ("water", "well_water", "world_water"):
+        if key in ("water", "well_water", "world_water") and not realistic:
             shader.inputs["Roughness"].default_value = 0.20
             shader.inputs["Metallic"].default_value = 0.20
         if realistic and key.startswith("leaves"):
             material["foliage_bend_uv"] = "V"
-            shader.inputs["Roughness"].default_value = 0.55
-            shader.inputs["Subsurface Weight"].default_value = 0.09
-            shader.inputs["Subsurface Radius"].default_value = (
-                0.05,
-                0.09,
-                0.03,
-            )
+            configure_realistic_foliage(material, shader)
         if key == "iron" or (realistic and key == "metal"):
-            shader.inputs["Metallic"].default_value = 0.65
-            shader.inputs["Roughness"].default_value = 0.40
+            shader.inputs["Metallic"].default_value = (
+                0.86 if realistic else 0.65
+            )
+            shader.inputs["Roughness"].default_value = (
+                0.35 if realistic else 0.40
+            )
         finish = finishes.get(key)
         if finish:
             configure_architecture_surface(
                 material, shader, finish, realistic=realistic
             )
         result[key] = material
-    configure_surface_materials(result, houses._principled_shader)
+    configure_surface_materials(
+        result, houses._principled_shader, realistic=realistic
+    )
     for key, material in result.items():
         style_material(
             material, houses._principled_shader(material), key, art_style
@@ -214,6 +248,10 @@ def _finish(batch, collection, root, role):
                     == batch.materials["castle_cone"]
                 )
             obj.data.set_sharp_from_angle(angle=math.radians(35))
+        elif role == "natural_stone":
+            for polygon in obj.data.polygons:
+                polygon.use_smooth = True
+            obj.data.set_sharp_from_angle(angle=math.radians(48))
         elif role in (
             "trees",
             "tree_trunks",
@@ -305,14 +343,76 @@ def _shops_and_markets(plan, collection, root, materials):
                 for a, b in zip(road.points, road.points[1:], strict=False)
             ):
                 continue
-            batch.box((sx, sy, z + 0.62), (1.7, 1.0, 1.0), "wood")
-            batch.box(
-                (sx, sy, z + 2.05),
-                (2.0, 1.4, 0.12),
-                "cloth_blue" if i % 2 else "cloth_red",
-            )
-            for ox in (-0.8, 0.8):
-                batch.box((sx + ox, sy, z + 1.05), (0.07, 0.07, 2.1), "wood")
+            if plan.config.art_style == "REALISTIC":
+                # Pitched medieval canvas booth with crates and counter.
+                stall_ang = angle + math.pi / 2
+                sc, ss = math.cos(stall_ang), math.sin(stall_ang)
+                s_basis = ((sc, ss, 0), (-ss, sc, 0), (0, 0, 1))
+                batch.box(
+                    (sx, sy, z + 0.52), (1.95, 1.05, 0.92), "wood", s_basis
+                )
+                batch.box(
+                    (sx, sy, z + 0.98), (2.05, 1.15, 0.08), "timber", s_basis
+                )
+                # Four timber corner posts supporting pitched awning.
+                for ox in (-0.92, 0.92):
+                    for oy, ph in ((-0.52, 2.25), (0.52, 1.92)):
+                        px = sx + ox * sc - oy * ss
+                        py = sy + ox * ss + oy * sc
+                        batch.box(
+                            (px, py, z + ph / 2),
+                            (0.08, 0.08, ph),
+                            "timber",
+                            s_basis,
+                        )
+                # Sloped striped cloth canopy.
+                cloth_a = "cloth_blue" if i % 2 else "cloth_red"
+                for stripe in range(5):
+                    u0 = -1.12 + stripe * (2.24 / 5)
+                    u1 = u0 + (2.24 / 5)
+                    p0 = (
+                        sx + u0 * sc + 0.68 * ss,
+                        sy + u0 * ss - 0.68 * sc,
+                        z + 2.28,
+                    )
+                    p1 = (
+                        sx + u1 * sc + 0.68 * ss,
+                        sy + u1 * ss - 0.68 * sc,
+                        z + 2.28,
+                    )
+                    p2 = (
+                        sx + u1 * sc - 0.68 * ss,
+                        sy + u1 * ss + 0.68 * sc,
+                        z + 1.90,
+                    )
+                    p3 = (
+                        sx + u0 * sc - 0.68 * ss,
+                        sy + u0 * ss + 0.68 * sc,
+                        z + 1.90,
+                    )
+                    batch.prism(
+                        [p0, p1, p2, p3],
+                        (0, 0, -0.05),
+                        cloth_a if stripe % 2 == 0 else "cloth_cream",
+                    )
+                # Wooden trade crate beside the booth.
+                batch.box(
+                    (sx + 1.25 * sc, sy + 1.25 * ss, z + 0.30),
+                    (0.55, 0.55, 0.55),
+                    "wood",
+                    s_basis,
+                )
+            else:
+                batch.box((sx, sy, z + 0.62), (1.7, 1.0, 1.0), "wood")
+                batch.box(
+                    (sx, sy, z + 2.05),
+                    (2.0, 1.4, 0.12),
+                    "cloth_blue" if i % 2 else "cloth_red",
+                )
+                for ox in (-0.8, 0.8):
+                    batch.box(
+                        (sx + ox, sy, z + 1.05), (0.07, 0.07, 2.1), "wood"
+                    )
     _finish(batch, collection, root, "commerce")
 
 
@@ -633,6 +733,7 @@ def build_settlement(
             materials,
             _finish,
             allowed=skin.grass_allowed if skin else None,
+            realistic=config.art_style == "REALISTIC",
         )
         for poi in plan.navigation["points_of_interest"]:
             if poi["kind"] == "BUILDING_ENTRY":
@@ -739,52 +840,64 @@ def preview_stage(plan, collection, root):
         span * 1.85,
         span * 20,
     )
+    saved = json.loads(root["config_json"])
+    art_style = saved.get("art_style", "REALISTIC")
+    realistic = art_style == "REALISTIC"
     bpy.context.scene.camera = camera
-    for name, position, energy in (
-        ("Key", (-span * 0.5, -span * 0.5, span), 1900),
-        ("Fill", (span * 0.7, 0, span * 0.7), 1000),
-    ):
-        data = bpy.data.lights.new("Settlement_" + name, "AREA")
-        data.energy, data.shape, data.size = (
-            energy * (span / 8) ** 2,
-            "DISK",
-            span * 0.8,
-        )
-        obj = bpy.data.objects.new("Settlement_" + name, data)
-        collection.objects.link(obj)
-        _owned(obj, generation)
-        obj["settlement_part"] = "preview"
-        obj.parent = root
-        obj.location = position
-        bpy.context.view_layer.update()
-        obj.rotation_euler = (
-            (target - obj.location).to_track_quat("-Z", "Y").to_euler()
-        )
     scene = bpy.context.scene
     if scene.world is None or scene.world.get(OWNER_KEY) != OWNER:
         scene.world = bpy.data.worlds.new("Settlement_World")
         scene.world[OWNER_KEY] = OWNER
     scene.world.use_nodes = True
-    background = next(
-        (
-            node
-            for node in scene.world.node_tree.nodes
-            if node.type == "BACKGROUND"
-        ),
-        None,
-    )
-    if background:
-        background.inputs["Color"].default_value = (0.72, 0.82, 0.91, 1)
-        background.inputs["Strength"].default_value = 0.6
-    saved = json.loads(root["config_json"])
-    scene.render.engine = preview_engine(saved.get("art_style", "REALISTIC"))
-    scene.cycles.samples, scene.cycles.use_denoising = 24, True
-    scene.cycles.device = "CPU"
+    if realistic:
+        configure_realistic_sky(
+            scene.world,
+            sun_elevation=22.0,
+            sun_rotation=232.0,
+            sun_disc=True,
+            sun_intensity=1.0,
+        )
+        configure_realistic_cycles(scene, samples=48, exposure=0.0)
+    else:
+        for name, position, energy in (
+            ("Key", (-span * 0.5, -span * 0.5, span), 1900),
+            ("Fill", (span * 0.7, 0, span * 0.7), 1000),
+        ):
+            data = bpy.data.lights.new("Settlement_" + name, "AREA")
+            data.energy, data.shape, data.size = (
+                energy * (span / 8) ** 2,
+                "DISK",
+                span * 0.8,
+            )
+            obj = bpy.data.objects.new("Settlement_" + name, data)
+            collection.objects.link(obj)
+            _owned(obj, generation)
+            obj["settlement_part"] = "preview"
+            obj.parent = root
+            obj.location = position
+            bpy.context.view_layer.update()
+            obj.rotation_euler = (
+                (target - obj.location).to_track_quat("-Z", "Y").to_euler()
+            )
+        background = next(
+            (
+                node
+                for node in scene.world.node_tree.nodes
+                if node.type == "BACKGROUND"
+            ),
+            None,
+        )
+        if background:
+            background.inputs["Color"].default_value = (0.72, 0.82, 0.91, 1)
+            background.inputs["Strength"].default_value = 0.6
+        scene.render.engine = preview_engine(art_style)
+        scene.cycles.samples, scene.cycles.use_denoising = 24, True
+        scene.cycles.device = "CPU"
+        scene.view_settings.view_transform = "AgX"
+        scene.view_settings.look = "AgX - Medium High Contrast"
     scene.render.resolution_x, scene.render.resolution_y = 1400, 1100
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-    scene.view_settings.view_transform = "AgX"
-    scene.view_settings.look = "AgX - Medium High Contrast"
 
 
 def preview_castle(plan, collection, root):

@@ -315,7 +315,41 @@ def _boundary(config, rng, site):
     return tuple(points), aspect
 
 
-def _template(identifier, width, depth, floors, config, palette, style):
+def _settlement_pot_rate(seed, style):
+    """Choose whether a settlement omits, rarely uses, or mixes pots."""
+    rng = random.Random(f"{seed}:{style}:chimney-tradition")
+    roll = rng.random()
+    if style in ("MOUNTAIN", "LAKESIDE"):
+        if roll < 0.45:
+            return 0.0
+        if roll < 0.80:
+            return 0.14
+        return 0.72
+    if roll < 0.35:
+        return 0.0
+    if roll < 0.70:
+        return 0.16
+    return 0.78
+
+
+def _chimney_cap_for(seed, pot_rate):
+    rng = random.Random(f"{seed}:chimney-cap")
+    if rng.random() < pot_rate:
+        return "POTS"
+    return "STONE_CAP" if rng.random() < 0.58 else "OPEN"
+
+
+def _template(
+    identifier,
+    width,
+    depth,
+    floors,
+    config,
+    palette,
+    style,
+    *,
+    chimney_cap="AUTO",
+):
     wall_style = {
         "MOUNTAIN": "BRICK",
         "HARBOR": "WOOD_VERTICAL" if palette == "COASTAL" else "PLASTER",
@@ -329,7 +363,7 @@ def _template(identifier, width, depth, floors, config, palette, style):
     house = HouseConfig(
         art_style=config.art_style,
         seed=config.seed + len(identifier) * 19,
-        detail_seed=config.seed % 41,
+        detail_seed=(config.seed + len(identifier) * 7 + floors * 13) % 997,
         width=width,
         depth=depth,
         floors=floors,
@@ -344,6 +378,7 @@ def _template(identifier, width, depth, floors, config, palette, style):
         shutters=config.detail == "HIGH",
         palette=palette,
         bevel=0.012 if config.detail == "HIGH" else 0,
+        chimney_cap=chimney_cap,
     )
     plan = make_plan(house)
     opening = next(o for o in plan.walls[0].openings if o.kind == "DOOR")
@@ -352,6 +387,7 @@ def _template(identifier, width, depth, floors, config, palette, style):
 
 
 def _templates(config, style):
+    pot_rate = _settlement_pot_rate(config.seed, style)
     result = []
     for index, (width, depth) in enumerate(
         ((4.6, 5.0), (5.4, 6.0), (6.4, 7.0))
@@ -359,6 +395,7 @@ def _templates(config, style):
         for floors in range(1, 4):
             for palette in ("WARM", "COASTAL"):
                 identifier = f"home_{index}_{floors}_{palette.lower()}"
+                cap = _chimney_cap_for(f"{config.seed}:{identifier}", pot_rate)
                 result.append(
                     _template(
                         identifier,
@@ -368,6 +405,7 @@ def _templates(config, style):
                         config,
                         palette,
                         style,
+                        chimney_cap=cap,
                     )
                 )
     return tuple(result)
@@ -1287,6 +1325,14 @@ def make_settlement(config, *, site=None):
             "remaining land reserved"
         )
     navigation = navigation_graph(roads, buildings, gates, markets, castle)
+    wall_height = profile["wall_height"]
+    if config.art_style == "REALISTIC":
+        wall_height *= {
+            "VILLAGE": 1.15,
+            "TOWN": 1.25,
+            "CITY": 1.40,
+            "CAPITAL": 1.52,
+        }[config.scale]
     plan = SettlementPlan(
         config,
         terrain,
@@ -1298,7 +1344,7 @@ def make_settlement(config, *, site=None):
         templates,
         castle,
         _enabled(config.walls, profile["walls"]),
-        profile["wall_height"],
+        wall_height,
         navigation,
         tuple(warnings),
         site_style=style,

@@ -2,6 +2,8 @@
 
 import bpy
 
+from realistic_materials import configure_realistic_glass
+
 SHADE = (0.32, 0.40, 0.57, 1)
 HALFTONE = (0.70, 0.74, 0.80, 1)
 SUN = (1.18, 1.07, 0.93, 1)
@@ -96,10 +98,7 @@ def _lighting(foliage):
 
 def _glass(material, shader, art_style):
     if art_style == "REALISTIC":
-        shader.inputs["Base Color"].default_value = (0.82, 0.91, 0.90, 1)
-        shader.inputs["Transmission Weight"].default_value = 0.96
-        shader.inputs["Roughness"].default_value = 0.095
-        shader.inputs["IOR"].default_value = 1.50
+        configure_realistic_glass(material, shader)
         return
     tree = material.node_tree
     coords = tree.nodes.new("ShaderNodeTexCoord")

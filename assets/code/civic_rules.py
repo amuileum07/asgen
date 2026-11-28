@@ -88,13 +88,16 @@ class CivicPlanner:
                 )
                 for i in range(8)
             ]
-            if max(samples) - min(samples) > 0.14 * scale:
+            limit = 0.55 if kind == "BELL_TOWER" else 0.14
+            if max(samples) - min(samples) > limit * scale:
                 return False
+        grand = self.plan.config.scale in ("CITY", "CAPITAL")
         size = {
             "WELL": (3.4, 2.9, 3.15),
             "FOUNTAIN": (3.4, 3.4, 3.05),
             "STREET_LAMP": (2.6 if self.arms == 2 else 1.6, 0.7, 4.05),
             "STATUE_ANCHOR": (1.8, 1.8, 3.2),
+            "BELL_TOWER": (4.4, 4.4, 22.8) if grand else (3.4, 3.4, 15.2),
         }[kind]
         self.assets.append(
             CivicAsset(
@@ -112,6 +115,7 @@ class CivicPlanner:
                     "arms": self.arms,
                     "tiers": self.tiers,
                     "lantern_sides": 4 if self.family == "OCTAGONAL" else 6,
+                    "grand": grand,
                 },
             )
         )
@@ -147,6 +151,10 @@ def make_civic_assets(plan):
     for market in plan.markets[-well_count:]:
         scale = planner.rng.uniform(0.93, 1.05)
         planner.square_asset("WELL", market, 1.75 * scale, scale)
+    if plan.config.art_style == "REALISTIC" and plan.markets:
+        # Place a village or city belfry beside the market square.
+        belfry_r = 2.4 if large else 1.9
+        planner.square_asset("BELL_TOWER", plan.markets[0], belfry_r, 1.0)
     if large:
         for market in plan.markets[
             : 2 if plan.config.scale == "CAPITAL" else 1

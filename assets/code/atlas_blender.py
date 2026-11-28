@@ -34,11 +34,16 @@ from civic_blender import add_tree, build_grass_meshes, ground_cast
 from civic_rules import grass_cells, grass_samples
 from fortification_blender import cylinder
 from house_generator import MeshBatch, _linear_color
+from realistic_materials import (
+    configure_realistic_cycles,
+    configure_realistic_sky,
+)
 from surface_blender import paint_land
 from terrain_detail import refine_slopes
 from terrain_rules import ground_gradient, segment_projection, smoothstep
 from tree_blender import TreeLibrary
 from world_blender import _clip_water, _preview_sky, _water_colour
+from world_nature_blender import add_crag_boulder
 
 EARTH = {
     key: _linear_color(value[3])[:3] for key, value in ENVIRONMENTS.items()
@@ -280,55 +285,7 @@ def _roads(stage, atlas, land, cell, paths, ground):
 
 
 def _stone(batch, x, y, z, width, rng, *, realistic=False):
-    angle = rng.random() * math.tau
-    rings = []
-    first = len(batch.vertices)
-    bias = rng.uniform(-39, 39)
-    sides = 14 if realistic else 8
-    profile = (
-        (
-            (-0.26, 0.73),
-            (0.02, 0.95),
-            (0.18, 1.0),
-            (0.25, 0.84),
-            (0.43, 0.78),
-            (0.54, 0.56),
-            (0.60, 0.28),
-        )
-        if realistic
-        else ((-0.15, 0.79), (0.14, 1), (0.55, 0.58))
-    )
-    for layer, (height, scale) in enumerate(profile):
-        ring = []
-        for k in range(sides):
-            yaw = angle + k * math.tau / sides
-            u, v = math.cos(yaw), math.sin(yaw)
-            t = noise(Vector((u * 2 + bias, v * 2, layer * 0.91)))
-            ring.append(
-                (
-                    x + (u * scale + t * 0.16) * width,
-                    y + (v * scale * 0.77 + t * 0.10) * width,
-                    z + (height + t * 0.15) * width,
-                )
-            )
-        rings.append(ring)
-        batch.vertices.extend(ring)
-    last = sides * (len(rings) - 1)
-    faces = [tuple(reversed(range(sides))), tuple(range(last, last + sides))]
-    for ring_start in range(0, last, sides):
-        faces.extend(
-            (
-                ring_start + i,
-                ring_start + (i + 1) % sides,
-                ring_start + (i + 1) % sides + sides,
-                ring_start + i + sides,
-            )
-            for i in range(sides)
-        )
-    batch.faces.extend(tuple(first + i for i in face) for face in faces)
-    batch.face_materials.extend(
-        [batch.material_indices["rock_light"]] * len(faces)
-    )
+    add_crag_boulder(batch, x, y, z, width, rng, realistic=realistic)
 
 
 def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
@@ -480,6 +437,7 @@ def _nature(stage, atlas, land, cell, mesh, tree, shafts, meadow=None):
         grass_finish,
         chunk_size=32,
         simple=stage.game,
+        realistic=atlas.art_style == "REALISTIC",
     )
 
 
@@ -766,22 +724,39 @@ def preview(
     camera_data.ortho_scale = framing
     camera_data.clip_end = 1600
     scene.camera = camera
+    realistic = atlas.art_style == "REALISTIC"
     sun_data = bpy.data.lights.new("Atlas Sun", "SUN")
     sun = bpy.data.objects.new(sun_data.name, sun_data)
     collection.objects.link(sun)
     sun["settlement_part"] = "preview"
-    sun.rotation_euler = (
-        Vector((0.57, 0.68, -0.84)).to_track_quat("-Z", "Y").to_euler()
-    )
+    sun_vec = Vector((0.57, 0.68, -0.62 if realistic else -0.84))
+    sun.rotation_euler = sun_vec.to_track_quat("-Z", "Y").to_euler()
     sun_data.energy, sun_data.color, sun_data.angle = (
-        2.7,
-        (1, 0.91, 0.76),
-        math.radians(6),
+        3.6 if realistic else 2.7,
+        (1, 0.90, 0.74) if realistic else (1, 0.91, 0.76),
+        math.radians(0.85 if realistic else 6),
     )
-    _preview_sky(scene)
-    scene.render.engine = preview_engine(atlas.art_style)
-    scene.cycles.samples = 16
+    if realistic:
+        if not scene.world or not scene.world.get("procedural_world_lighting"):
+            scene.world = bpy.data.worlds.new("World_Sky")
+            scene.world["procedural_world_lighting"] = True
+        sun_dir = -sun_vec.normalized()
+        elev = max(
+            8.0, math.degrees(math.asin(max(-1.0, min(1.0, sun_dir.z))))
+        )
+        rot = math.degrees(math.atan2(sun_dir.x, sun_dir.y))
+        configure_realistic_sky(
+            scene.world,
+            sun_elevation=elev,
+            sun_rotation=rot,
+            sun_disc=False,
+        )
+        configure_realistic_cycles(scene, samples=48, exposure=0.0)
+    else:
+        _preview_sky(scene)
+        scene.render.engine = preview_engine(atlas.art_style)
+        scene.cycles.samples = 16
+        scene.view_settings.view_transform = "AgX"
     scene.render.resolution_x, scene.render.resolution_y = 1280, 840
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-    scene.view_settings.view_transform = "AgX"

@@ -367,6 +367,9 @@ class Atlas:
             if kind not in (
                 "SEA",
                 "RIVER",
+                "STREAM",
+                "POND",
+                "MARSH",
                 "CANYON",
                 "GLACIAL_TROUGH",
                 "TARN",
@@ -480,7 +483,11 @@ class Atlas:
             if "north_height_m" in ridge:
                 v0, v1 = ridge.get("north_ramp_v", (0.4, 0.9))
                 height += ridge["north_height_m"] * smoothstep(v0, v1, v)
-            depth += height * weight
+            if self.art_style == "REALISTIC":
+                arête = 1 - abs(value_noise(x / 115, y / 115, self.seed + 541))
+                depth += height * weight * (0.86 + 0.24 * arête)
+            else:
+                depth += height * weight
             grain_scale += ridge.get("grain_m", 0.0) * weight
             ledge_scale += ridge.get("ledge_m", 0.0) * weight
 
@@ -488,7 +495,11 @@ class Atlas:
             cu, cv = peak["centre_uv"]
             ru, rv = peak["radii_uv"]
             weight = math.exp(-(((u - cu) / ru) ** 2 + ((v - cv) / rv) ** 2))
-            depth += peak["height_m"] * weight
+            if self.art_style == "REALISTIC":
+                crag = 1 - abs(value_noise(x / 90, y / 90, self.seed + 613))
+                depth += peak["height_m"] * weight * (0.88 + 0.20 * crag)
+            else:
+                depth += peak["height_m"] * weight
             grain_scale += peak.get("grain_m", 0.0) * weight
             ledge_scale += peak.get("ledge_m", 0.0) * weight
 
@@ -529,9 +540,13 @@ class Atlas:
             skew = dune.get("skew", 0.27)
             wave = dune.get("wavelength_m", 57.0)
             amp = dune.get("amplitude_m", 7.0)
-            depth += smoothstep(u0, u1, u) * (
-                math.sin((dist + y * skew) / wave + grain * 0.8) * amp
+            phase = (dist + y * skew) / wave + grain * 0.8
+            dune_wave = (
+                math.sin(phase) * 0.76 + math.sin(phase * 2.0 - 0.55) * 0.24
+                if self.art_style == "REALISTIC"
+                else math.sin(phase)
             )
+            depth += smoothstep(u0, u1, u) * (dune_wave * amp)
 
         if coast is None:
             return max(0.05, depth)

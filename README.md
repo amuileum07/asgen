@@ -4,6 +4,9 @@ Blender Python과 표준 라이브러리만으로 **주택·실내·성·도시�
 
 특정 게임의 세계관이나 고정 맵 조건을 코드에 묶지 않고, 사용자가 **JSON 설정 파일**로 지형·해안·산맥·수계·바이옴·도시·던전 구성을 직접 정의해 원하는 형태의 3D 맵을 만들 수 있습니다.
 
+> **개발 진행 중 (Work in Progress)**
+> 이 저장소는 현재 실사풍(`REALISTIC`) 에셋·성채·월드 생성 기능을 계속 고도화하는 중이며 아직 완성 단계가 아닙니다. 특히 **대륙 전체를 절차적으로 구성하고 바이옴·산맥·대협곡·대하·정착지를 하나의 광역 월드로 통합 생성하는 기능**은 현재 프로토타입 및 확장 작업이 진행 중입니다.
+
 ![초지 눈높이에서 본 절차적 월드와 정착지](docs/images/meadow_view.jpg)
 
 ## 생성 예시
@@ -20,9 +23,22 @@ Blender Python과 표준 라이브러리만으로 **주택·실내·성·도시�
 
 주택·도시·월드의 Blender 패널에서 **표현 스타일**을 선택할 수 있습니다. 기본값은 카툰풍입니다. JSON 최상위에 `"art_style": "REALISTIC"`을 지정하거나 생성 명령에 `--art-style REALISTIC`을 추가하면 실사풍으로 제작합니다. 같은 옵션을 아틀라스에도 사용할 수 있으며 기존 월드 옵션 `--toon`은 카툰풍을 선택합니다.
 
-카툰풍 미리보기는 EEVEE에서 단계 명암을 표현합니다. 실사풍 미리보기는 Cycles에서 절차적 표면 요철과 투과 유리를 렌더합니다. OGRE 출력은 기존 게임용 재질과 텍스처 형식을 사용합니다.
+카툰풍 미리보기는 EEVEE에서 단계 명암을 표현합니다. 실사풍 미리보기는 Cycles에서 물리 기반 하늘(`MULTIPLE_SCATTERING`)과 절차적 다중 스케일 PBR 셰이더(풍화·이끼·거칠기 변화·범프·납틀 투과 유리)를 렌더합니다. OGRE 출력은 기존 게임용 재질과 텍스처 형식을 그대로 유지합니다.
 
-실사풍은 활엽수의 가지 끝에 접힌 잎을, 침엽수의 줄기 둘레에 층층이 잔가지를 생성합니다. 숲에서는 같은 변형의 메시를 공유하고 회전과 크기를 바꿉니다. 주택에는 굴곡진 기와와 분절된 용마루를, 성벽에는 지면 경사를 따르는 덮개돌을 만듭니다. 자연 사면은 이웃 삼각형이 공유하는 모서리를 세분화해 굴곡을 더합니다. 월드 숲과 게임용 아틀라스 타일은 가지와 잎 수를 줄인 실사풍 메시를 사용합니다.
+실사풍(`REALISTIC`)에는 다음과 같은 디테일이 적용됩니다.
+- **건축·주택**: 굴곡진 입체 기와와 용마루, 계층화된 목재 골조, 정착지·주택별 굴뚝 마감 변형(`AUTO` / `OPEN` / `STONE_CAP` / `POTS`, `--chimney-cap` 옵션으로 개별 지정 가능)
+- **성벽·성채·마을 시설**: 판타지적 스케일이 가미된 높은 외성벽(경사 석축 기단·부벽·돌출 성가퀴·쌍탑 바비칸 성문·철격자·원뿔 첨탑), 강변 다중 아치 돌다리와 물레방아, 광장 옆 오픈 종루 종탑(`BELL_TOWER`), 박공 천막 시장 부스
+- **식생·지형·자연물**: 접힌 잎 활엽수와 층상 침엽수, 방사형 능선 산악(`MOUNTAIN` / `MOUNTAIN_RANGE`), 계단식 퇴적층 거대 협곡(`CANYON`), 비대칭 사막 사구(`DESERT`), 습지·늪(`MARSH` / `MARSH_POOL`), 호수·작은 못(`LAKE` / `POND`), 강·산간 개울(`RIVER` / `STREAM`), 자연 암석 동굴(`Cave`)과 갈대·바위
+
+### 실사풍 월드·성채 생성 예시 (개발 중 / WIP)
+
+> 아래 월드 렌더는 [world_monumental_realistic.json](assets/code/presets/world_monumental_realistic.json) 프로토타입 프리셋을 기반으로 중앙 거대 설산, 양갈래 산맥, 붉은 사암 대협곡·협곡 강, 빙하 연못 발원 대하·개울, 사막·늪·호수·4개 정착지를 배치해 검증한 중간 결과물입니다. 대륙 전체 스케일 생성 및 광역 아틀라스 통합은 계속 개발 중입니다.
+
+| 실사풍 중세 주택 (Cycles PBR) | 강변 성문·돌 아치 다리·물레방아·종탑·성채 |
+| :---: | :---: |
+| ![실사풍 중세 주택](docs/images/house_realistic_aaa.jpg) | ![강변 성문과 물레방아 및 성채](docs/images/citadel_riverside.jpg) |
+| **중앙 설산 기슭의 성채 도시 (`citadel_ford`)** | **중앙 설산·산맥·대협곡·대하로 나뉜 월드 프로토타입** |
+| ![중앙 설산 기슭의 성채 도시](docs/images/citadel_central_peak.jpg) | ![중앙 설산과 자연 경계로 나뉜 월드 전경](docs/images/world_realistic_aerial.jpg) |
 
 ### 건물과 정착지
 
@@ -72,19 +88,27 @@ $blender = 'C:\Program Files\Blender Foundation\Blender 5.3\blender.exe'
   --render assets/generated/city.png
 ```
 
-### 3. 커스텀 소형 월드 생성
+### 3. 커스텀 월드 생성 (소형 월드 · 실사 프로토타입)
 
-`assets/code/presets/world_example.json`을 복사해 크기, 해안, 산/계곡/언덕/평원, 호수, 강, 정착지 입지를 원하는 대로 바꿀 수 있습니다.
+`assets/code/presets/world_example.json`(기본 소형 월드) 또는 `assets/code/presets/world_monumental_realistic.json`(중앙 거대 설산·산맥·협곡·사막·늪·개울·동굴·물레방아·종탑·성채 도시 포함 실사 프로토타입)을 복사해 원하는 지형과 정착지 구성을 만들 수 있습니다.
 
 ```powershell
 # Blender 없이 평면 계획과 SVG 지도 먼저 확인
 uv run --no-project --python 3.13 python assets/code/world_generator.py `
-  --config assets/code/presets/world_example.json `
+  --config assets/code/presets/world_monumental_realistic.json `
   --layout-output assets/generated/world_plan.json `
   --map assets/generated/world_map.svg
+
+# Blender Cycles로 성채 도시 포커스 렌더
+& $blender --background --factory-startup --python-exit-code 1 `
+  --python assets/code/world_generator.py -- `
+  --config assets/code/presets/world_monumental_realistic.json `
+  --focus citadel_ford `
+  --output assets/generated/world_realistic.blend `
+  --render assets/generated/world_realistic.png
 ```
 
-### 4. 커스텀 대규모 아틀라스 생성
+### 4. 커스텀 대규모 아틀라스 / 대륙 생성 (개발 중 / WIP)
 
 `assets/code/presets/atlas_example.json`을 복사하거나 `"extends"`로 기존 JSON 블루프린트를 상속해 원하는 대륙·왕국·도시·던전을 구성합니다.
 

@@ -22,7 +22,9 @@ if __name__ == "__main__":
         "house_rules",
         "interior_rules",
         "interior_blender",
+        "realistic_materials",
         "game_materials",
+        "roof_detail_blender",
         "toon_preview",
     ):
         if module_name in sys.modules:
@@ -31,6 +33,7 @@ if __name__ == "__main__":
 from art_style import ART_STYLES, STYLE_ITEMS, preview_engine  # noqa: E402
 from house_rules import (  # noqa: E402
     ARCHITECTURES,
+    CHIMNEY_CAPS,
     FOUNDATION_HEIGHT,
     PALETTES,
     ROOF_STYLES,
@@ -54,7 +57,12 @@ try:
 
     import interior_blender
     from game_materials import configure_architecture_surface
-    from roof_detail_blender import pan_tile, ridge_caps
+    from realistic_materials import (
+        configure_realistic_cycles,
+        configure_realistic_preview_ground,
+        configure_realistic_sky,
+    )
+    from roof_detail_blender import eaves_rafters, pan_tile, ridge_caps
     from toon_preview import style_material
 except ModuleNotFoundError:
     bpy = None
@@ -163,19 +171,26 @@ def _make_materials(config):
         )
         if realistic:
             colors["roof"] = {
-                "WARM": "884b35",
-                "PASTEL": "697775",
-                "COASTAL": "526965",
+                "WARM": "b26242",
+                "PASTEL": "667573",
+                "COASTAL": "516966",
             }[config.palette]
-            colors.update(plaster="d7cfb7", wood="987650", frame="896d4b")
+            colors.update(
+                plaster="cec5ae",
+                trim="3a2c22",
+                wood="836443",
+                frame="74593c",
+                door="785939",
+                foundation="75736a",
+            )
     specifications = dict(colors)
     specifications["mortar"] = (
         "dfcfb5" if config.wall_style == "BRICK" else colors["trim"]
     )
-    specifications["metal"] = "ddb66b"
+    specifications["metal"] = "3a3d40" if realistic else "ddb66b"
     specifications["ground"] = "b2c3a4"
-    specifications["stone"] = "939084"
-    specifications["chimney_hole"] = "302c2b"
+    specifications["stone"] = "7c7970" if realistic else "939084"
+    specifications["chimney_hole"] = "221f1e" if realistic else "302c2b"
     specifications.update(
         {
             "floor": "cbbd9d",
@@ -216,13 +231,21 @@ def _make_materials(config):
             desk="timber",
             partition="plaster",
             mortar="plaster" if config.wall_style == "BRICK" else "timber",
+            metal="metal",
+            bed="fabric",
+            sofa="fabric",
         )
     materials = {}
     for key, color in specifications.items():
-        brightness = 0.90 + 0.033 * int(key[-1]) if key[-1].isdigit() else 1.0
+        if key[-1].isdigit():
+            step = 0.046 if (realistic and key.startswith("roof_")) else 0.033
+            base_b = 0.84 if (realistic and key.startswith("roof_")) else 0.90
+            brightness = base_b + step * int(key[-1])
+        else:
+            brightness = 1.0
         if key == "roof" and config.roof_tiles and config.roof_style != "FLAT":
             # The gaps between raised tiles expose the darker bedding.
-            brightness = 0.70 if realistic else 0.63
+            brightness = 0.56 if realistic else 0.63
         material = bpy.data.materials.new(f"CH_{config.palette}_{key}")
         material[OWNER_KEY] = OWNER
         material.diffuse_color = _linear_color(color, brightness)
@@ -485,6 +508,7 @@ def _build_opening(batch, wall, opening, config):
     x1, z1, x2, z2 = opening.rectangle
     width, height = x2 - x1, z2 - z1
     border = 0.075
+    realistic = config.art_style == "REALISTIC"
     # Embed trim into the outer reveal so plaster walls have no air gap.
     _wall_box(
         batch,
@@ -519,6 +543,19 @@ def _build_opening(batch, wall, opening, config):
         0.165,
         "frame",
     )
+    if realistic:
+        # Heavy molded timber lintel header projecting over the jambs.
+        _wall_box(
+            batch,
+            wall,
+            x1 - border - 0.05,
+            z2 + border,
+            x2 + border + 0.05,
+            z2 + border + 0.075,
+            0.0,
+            0.205,
+            "trim",
+        )
     if opening.kind == "DOOR":
         if config.door_open:
             return
@@ -533,57 +570,113 @@ def _build_opening(batch, wall, opening, config):
             0.08,
             "door",
         )
-        for bottom, top in ((0.22, 0.72), (0.87, height - 0.18)):
-            _wall_box(
-                batch,
-                wall,
-                x1 + 0.15,
-                z1 + bottom,
-                x2 - 0.15,
-                z1 + top,
-                0.036,
-                0.018,
-                "wood",
-            )
+        if not realistic:
+            for bottom, top in ((0.22, 0.72), (0.87, height - 0.18)):
+                _wall_box(
+                    batch,
+                    wall,
+                    x1 + 0.15,
+                    z1 + bottom,
+                    x2 - 0.15,
+                    z1 + top,
+                    0.036,
+                    0.018,
+                    "wood",
+                )
         if config.architecture == "MEDIEVAL":
-            for index in range(6):
-                left = x1 + 0.04 + index * (width - 0.08) / 6
+            planks = 7 if realistic else 6
+            plank_gap = 0.008 if realistic else 0.018
+            for index in range(planks):
+                left = x1 + 0.04 + index * (width - 0.08) / planks
                 _wall_box(
                     batch,
                     wall,
                     left,
-                    z1 + 0.03,
-                    left + (width - 0.08) / 6 - 0.018,
-                    z2 - 0.04,
-                    0.057,
-                    0.025,
+                    z1 + 0.025,
+                    left + (width - 0.08) / planks - plank_gap,
+                    z2 - 0.035,
+                    0.042 if realistic else 0.057,
+                    0.026 if realistic else 0.025,
                     "door",
                 )
-            for fraction in (0.25, 0.72):
-                _wall_box(
-                    batch,
-                    wall,
-                    x1 + 0.07,
-                    z1 + height * fraction,
-                    x2 - 0.07,
-                    z1 + height * fraction + 0.055,
-                    0.084,
-                    0.02,
-                    "trim",
-                )
-        centre_u, centre_z = x2 - 0.17, z1 + height * 0.46
-        circle = [
-            _wall_point(
+            for fraction in (0.22, 0.74) if realistic else (0.25, 0.72):
+                if realistic:
+                    # Forged wrought-iron strap hinges at left jamb.
+                    strap_z = z1 + height * fraction
+                    _wall_box(
+                        batch,
+                        wall,
+                        x1 + 0.02,
+                        strap_z,
+                        x1 + width * 0.74,
+                        strap_z + 0.046,
+                        0.068,
+                        0.014,
+                        "metal",
+                    )
+                    _wall_box(
+                        batch,
+                        wall,
+                        x1 + 0.015,
+                        strap_z - 0.012,
+                        x1 + 0.065,
+                        strap_z + 0.058,
+                        0.068,
+                        0.024,
+                        "metal",
+                    )
+                else:
+                    _wall_box(
+                        batch,
+                        wall,
+                        x1 + 0.07,
+                        z1 + height * fraction,
+                        x2 - 0.07,
+                        z1 + height * fraction + 0.055,
+                        0.084,
+                        0.02,
+                        "trim",
+                    )
+        centre_u, centre_z = x2 - 0.15, z1 + height * 0.46
+        if realistic:
+            # Forged iron escutcheon plate and vertical pull handle.
+            _wall_box(
+                batch,
                 wall,
-                centre_u + math.cos(i * math.tau / 10) * 0.055,
-                centre_z + math.sin(i * math.tau / 10) * 0.055,
-                0.07,
+                centre_u - 0.032,
+                centre_z - 0.11,
+                centre_u + 0.032,
+                centre_z + 0.11,
+                0.068,
+                0.012,
+                "metal",
             )
-            for i in range(10)
-        ]
-        batch.prism(
-            circle, (wall.normal[0] * 0.06, wall.normal[1] * 0.06, 0), "metal"
-        )
+            _wall_box(
+                batch,
+                wall,
+                centre_u - 0.014,
+                centre_z - 0.065,
+                centre_u + 0.014,
+                centre_z + 0.065,
+                0.080,
+                0.038,
+                "metal",
+            )
+        else:
+            circle = [
+                _wall_point(
+                    wall,
+                    centre_u + math.cos(i * math.tau / 10) * 0.055,
+                    centre_z + math.sin(i * math.tau / 10) * 0.055,
+                    0.07,
+                )
+                for i in range(10)
+            ]
+            batch.prism(
+                circle,
+                (wall.normal[0] * 0.06, wall.normal[1] * 0.06, 0),
+                "metal",
+            )
         return
     _wall_box(
         batch,
@@ -592,8 +685,8 @@ def _build_opening(batch, wall, opening, config):
         z1 + 0.015,
         x2 - 0.015,
         z2 - 0.015,
-        -0.08,
-        0.035,
+        -0.09 if realistic else -0.08,
+        0.028 if realistic else 0.035,
         "glass",
     )
     _wall_box(
@@ -608,7 +701,7 @@ def _build_opening(batch, wall, opening, config):
         "frame",
     )
     mid_x, mid_z = (x1 + x2) / 2, (z1 + z2) / 2
-    if config.art_style == "REALISTIC":
+    if realistic:
         # Project the nose of the sill and cut a drip below its lip.
         section = [
             (0.16, -0.071),
@@ -621,48 +714,153 @@ def _build_opening(batch, wall, opening, config):
         batch.prism(
             start, (wall.tangent[0] * span, wall.tangent[1] * span, 0), "frame"
         )
+        # Twin corbel brackets supporting the projecting window sill.
+        for cx in (x1 - 0.04, x2 + 0.04):
+            _wall_box(
+                batch,
+                wall,
+                cx - 0.042,
+                z1 - 0.18,
+                cx + 0.042,
+                z1 - 0.085,
+                0.02,
+                0.18,
+                "trim",
+            )
     _wall_box(
         batch,
         wall,
-        mid_x - 0.026,
+        mid_x - (0.022 if realistic else 0.026),
         z1,
-        mid_x + 0.026,
+        mid_x + (0.022 if realistic else 0.026),
         z2,
-        -0.045,
-        0.12,
+        -0.055 if realistic else -0.045,
+        0.11 if realistic else 0.12,
         "frame",
     )
-    for left, right in ((x1, mid_x - 0.026), (mid_x + 0.026, x2)):
+    m_half = 0.022 if realistic else 0.026
+    for left, right in ((x1, mid_x - m_half), (mid_x + m_half, x2)):
         _wall_box(
             batch,
             wall,
             left,
-            mid_z - 0.026,
+            mid_z - m_half,
             right,
-            mid_z + 0.026,
-            -0.045,
-            0.12,
+            mid_z + m_half,
+            -0.055 if realistic else -0.045,
+            0.11 if realistic else 0.12,
             "frame",
         )
+    if realistic:
+        # Fine leaded-glass cames subdivide each quadrant 2x2.
+        came = 0.008
+        for qx1, qx2 in (
+            (x1 + 0.02, mid_x - m_half),
+            (mid_x + m_half, x2 - 0.02),
+        ):
+            sub_x = (qx1 + qx2) / 2
+            _wall_box(
+                batch,
+                wall,
+                sub_x - came,
+                z1 + 0.02,
+                sub_x + came,
+                z2 - 0.02,
+                -0.068,
+                0.024,
+                "metal",
+            )
+        for qz1, qz2 in (
+            (z1 + 0.02, mid_z - m_half),
+            (mid_z + m_half, z2 - 0.02),
+        ):
+            sub_z = (qz1 + qz2) / 2
+            _wall_box(
+                batch,
+                wall,
+                x1 + 0.02,
+                sub_z - came,
+                x2 - 0.02,
+                sub_z + came,
+                -0.068,
+                0.024,
+                "metal",
+            )
     if config.shutters:
         shutter_width = _shutter_width(wall, opening, config)
         if shutter_width > 0:
-            for left in (x1 - border - shutter_width, x2 + border):
-                for row in range(6):
-                    bottom = z1 + row * height / 6 + 0.012
-                    _wall_box(
-                        batch,
-                        wall,
-                        left,
-                        bottom,
-                        left + shutter_width,
-                        bottom + height / 6 - 0.024,
-                        0.04,
-                        0.085,
-                        "door"
-                        if config.wall_style.startswith("WOOD")
-                        else "wood",
-                    )
+            shutter_mat = (
+                "door" if config.wall_style.startswith("WOOD") else "wood"
+            )
+            for side_idx, left in enumerate(
+                (x1 - border - shutter_width, x2 + border)
+            ):
+                if realistic:
+                    # Board-and-batten timber shutter with iron hinges.
+                    boards = 3
+                    board_w = shutter_width / boards
+                    for b_idx in range(boards):
+                        bx = left + b_idx * board_w + 0.003
+                        _wall_box(
+                            batch,
+                            wall,
+                            bx,
+                            z1 + 0.015,
+                            bx + board_w - 0.006,
+                            z2 - 0.015,
+                            0.04,
+                            0.042,
+                            shutter_mat,
+                        )
+                    for batten_f in (0.17, 0.83):
+                        bz = z1 + height * batten_f
+                        _wall_box(
+                            batch,
+                            wall,
+                            left + 0.01,
+                            bz - 0.032,
+                            left + shutter_width - 0.01,
+                            bz + 0.032,
+                            0.082,
+                            0.024,
+                            "frame",
+                        )
+                        # Forged iron strap hinge pinned to the jamb.
+                        hx1 = (
+                            left + shutter_width * 0.25
+                            if side_idx == 0
+                            else left + 0.005
+                        )
+                        hx2 = (
+                            left + shutter_width - 0.005
+                            if side_idx == 0
+                            else left + shutter_width * 0.75
+                        )
+                        _wall_box(
+                            batch,
+                            wall,
+                            hx1,
+                            bz - 0.016,
+                            hx2,
+                            bz + 0.016,
+                            0.106,
+                            0.010,
+                            "metal",
+                        )
+                else:
+                    for row in range(6):
+                        bottom = z1 + row * height / 6 + 0.012
+                        _wall_box(
+                            batch,
+                            wall,
+                            left,
+                            bottom,
+                            left + shutter_width,
+                            bottom + height / 6 - 0.024,
+                            0.04,
+                            0.085,
+                            shutter_mat,
+                        )
 
 
 def _build_roof(batches, plan, config, rng):
@@ -691,9 +889,15 @@ def _build_roof(batches, plan, config, rng):
             if key not in seen_edges:
                 seen_edges.add(key)
                 if key in ridges:
-                    ridge_caps(batches["RoofTrim"], a, b, "roof")
+                    ridge_caps(batches["RoofTrim"], a, b, "roof_3")
                 else:
-                    batches["RoofTrim"].beam(a, b, 0.14, "trim")
+                    batches["RoofTrim"].beam(
+                        a, b, 0.125 if realistic else 0.14, "trim"
+                    )
+                    if realistic and config.roof_style != "FLAT":
+                        eaves_rafters(
+                            batches["RoofTrim"], a, b, normal, "trim"
+                        )
         if not config.roof_tiles or config.roof_style == "FLAT":
             continue
         origin = points[0]
@@ -712,18 +916,27 @@ def _build_roof(batches, plan, config, rng):
         boundary = [((p - origin).dot(u), (p - origin).dot(v)) for p in points]
         min_u, max_u = min(p[0] for p in boundary), max(p[0] for p in boundary)
         min_v, max_v = min(p[1] for p in boundary), max(p[1] for p in boundary)
-        tile_w, tile_h, gap = 0.64, 0.40, 0.035
+        tile_w, tile_h, gap = (
+            (0.34, 0.34, 0.006) if realistic else (0.64, 0.40, 0.035)
+        )
+        row_lap = 0.038 if realistic else 0.0
         for row in range(math.ceil((max_v - min_v) / tile_h)):
             offset = -tile_w / 2 if row % 2 else 0
             for column in range(math.ceil((max_u - min_u - offset) / tile_w)):
                 left = min_u + offset + column * tile_w + gap / 2
-                bottom = min_v + row * tile_h + gap / 2
+                bottom = (
+                    min_v
+                    + row * tile_h
+                    + gap / 2
+                    - (row_lap if v.z > 0 else 0.0)
+                )
+                eff_h = tile_h - gap + row_lap
                 tile = clip_polygon(
                     rectangle(
                         left,
                         bottom,
                         left + tile_w - gap,
-                        bottom + tile_h - gap,
+                        bottom + eff_h,
                     ),
                     boundary,
                 )
@@ -736,9 +949,10 @@ def _build_roof(batches, plan, config, rng):
                             left,
                             bottom,
                             tile_w - gap,
-                            tile_h - gap,
+                            eff_h,
                             (origin, u, v, normal),
                             material,
+                            rng,
                         )
                         continue
                     world = [
@@ -751,14 +965,15 @@ def _build_roof(batches, plan, config, rng):
 def _medieval_details(batches, house, config):
     timber = batches["Timber"]
     stone = batches["MedievalDetails"]
+    realistic = config.art_style == "REALISTIC"
 
-    def strip(wall, polygon, extra_openings=()):
+    def strip(wall, polygon, extra_openings=(), *, depth=0.065):
         clipped = clip_polygon(polygon, wall.profile)
         if len(clipped) >= 3 and polygon_area(clipped) > 1e-6:
             for piece in without_openings(
                 clipped, tuple(wall.openings) + tuple(extra_openings)
             ):
-                _wall_prism(timber, wall, piece, 0.065, 0.065, "trim")
+                _wall_prism(timber, wall, piece, 0.065, depth, "trim")
 
     for wall in house.walls:
         shutter_masks = []
@@ -781,7 +996,11 @@ def _medieval_details(batches, house, config):
         top = max(z for _, z in wall.profile)
         for index in range(1, bays):
             u = wall.length * index / bays
-            strip(wall, rectangle(u - 0.055, 0, u + 0.055, top))
+            strip(
+                wall,
+                rectangle(u - 0.055, 0, u + 0.055, top),
+                depth=0.060 if realistic else 0.065,
+            )
         if config.roof_style == "GABLE" and wall.name in ("Front", "Back"):
             # The tie beam sits just proud of the studs at eaves level.
             _wall_box(
@@ -798,7 +1017,9 @@ def _medieval_details(batches, house, config):
         for floor in range(config.floors):
             bottom = floor * house.floor_height
             strip(
-                wall, rectangle(0, bottom + 0.08, wall.length, bottom + 0.21)
+                wall,
+                rectangle(0, bottom + 0.08, wall.length, bottom + 0.21),
+                depth=0.068 if realistic else 0.065,
             )
             for bay in (0, bays - 1):
                 a = (wall.length * bay / bays + 0.12, bottom + 0.25)
@@ -820,14 +1041,65 @@ def _medieval_details(batches, house, config):
                         (b[0] - dz * thickness, b[1] + dx * thickness),
                     ],
                     shutter_masks,
+                    depth=0.054 if realistic else 0.065,
                 )
-        count = math.ceil(wall.length / 0.70)
-        for index in range(count):
-            left = index * wall.length / count + 0.012
-            right = (index + 1) * wall.length / count - 0.012
-            _wall_box(
-                stone, wall, left, -0.27, right, -0.03, 0.045, 0.13, "stone"
+        if config.art_style == "REALISTIC":
+            # Two-course dressed ashlar plinth and water-table ledge.
+            plinth_rng = random.Random(
+                f"{config.detail_seed}:plinth:{wall.name}"
             )
+            for row_idx, (z_bot, z_top) in enumerate(
+                ((-0.29, -0.155), (-0.145, -0.02))
+            ):
+                block_w = 0.52
+                offset = -block_w * 0.45 if row_idx else 0.0
+                pos_u = offset
+                while pos_u < wall.length:
+                    step_w = block_w * plinth_rng.uniform(0.82, 1.24)
+                    left = max(0.0, pos_u + 0.008)
+                    right = min(wall.length, pos_u + step_w - 0.008)
+                    if right - left > 0.08:
+                        relief = 0.135 + plinth_rng.uniform(-0.014, 0.016)
+                        _wall_box(
+                            stone,
+                            wall,
+                            left,
+                            z_bot,
+                            right,
+                            z_top,
+                            0.042,
+                            relief,
+                            "stone" if row_idx == 0 else "foundation",
+                        )
+                    pos_u += step_w
+            # Projecting stone water-table cap below the plaster.
+            _wall_box(
+                stone,
+                wall,
+                -0.02,
+                -0.02,
+                wall.length + 0.02,
+                0.04,
+                0.04,
+                0.17,
+                "stone",
+            )
+        else:
+            count = math.ceil(wall.length / 0.70)
+            for index in range(count):
+                left = index * wall.length / count + 0.012
+                right = (index + 1) * wall.length / count - 0.012
+                _wall_box(
+                    stone,
+                    wall,
+                    left,
+                    -0.27,
+                    right,
+                    -0.03,
+                    0.045,
+                    0.13,
+                    "stone",
+                )
     stone = batches["Chimney"]
     x, y = -house.width * 0.28, house.depth * 0.20
     roof_z = None
@@ -860,11 +1132,97 @@ def _medieval_details(batches, house, config):
         stone.box(
             (x, y, (bottom + top) / 2), (0.60, 0.65, top - bottom), "stone"
         )
-        for offset in (-0.35, 0.35):
-            stone.box((x, y + offset, top + 0.06), (0.82, 0.12, 0.12), "stone")
-        for offset in (-0.35, 0.35):
-            stone.box((x + offset, y, top + 0.06), (0.12, 0.58, 0.12), "stone")
-        stone.box((x, y, top + 0.012), (0.54, 0.54, 0.012), "chimney_hole")
+        if config.art_style == "REALISTIC":
+            # Roof flashing collar and stepped corbeled crown.
+            stone.box((x, y, roof_z + 0.05), (0.76, 0.81, 0.18), "metal")
+            stone.box((x, y, top - 0.15), (0.70, 0.75, 0.10), "stone")
+            stone.box((x, y, top - 0.04), (0.78, 0.83, 0.10), "stone")
+            for offset in (-0.35, 0.35):
+                stone.box(
+                    (x, y + offset, top + 0.07), (0.84, 0.14, 0.12), "stone"
+                )
+            for offset in (-0.35, 0.35):
+                stone.box(
+                    (x + offset, y, top + 0.07), (0.14, 0.56, 0.12), "stone"
+                )
+            stone.box((x, y, top + 0.02), (0.56, 0.56, 0.02), "chimney_hole")
+            cap = config.chimney_cap
+            if cap == "AUTO":
+                cap_rng = random.Random(
+                    f"{config.seed}:{config.detail_seed}:chimney_cap"
+                )
+                roll = cap_rng.random()
+                cap = (
+                    "STONE_CAP"
+                    if roll < 0.45
+                    else "OPEN"
+                    if roll < 0.75
+                    else "POTS"
+                )
+            if cap == "STONE_CAP":
+                # Four corner stone piers and a rain-cap slab.
+                for sx in (-0.31, 0.31):
+                    for sy in (-0.33, 0.33):
+                        stone.box(
+                            (x + sx, y + sy, top + 0.24),
+                            (0.14, 0.14, 0.24),
+                            "stone",
+                        )
+                stone.box(
+                    (x, y, top + 0.39), (0.86, 0.91, 0.085), "foundation"
+                )
+            elif cap == "POTS":
+                # One or two weathered terracotta pots with soot rims.
+                pot_rng = random.Random(
+                    f"{config.seed}:{config.detail_seed}:chimney_pots"
+                )
+                offsets = (-0.15, 0.15) if pot_rng.random() < 0.65 else (0.0,)
+                pot_sides = 10
+                for py_off in offsets:
+                    pot_h = pot_rng.uniform(0.26, 0.34)
+                    pot_base = [
+                        (
+                            x + 0.098 * math.cos(k * math.tau / pot_sides),
+                            y
+                            + py_off
+                            + 0.098 * math.sin(k * math.tau / pot_sides),
+                            top + 0.04,
+                        )
+                        for k in range(pot_sides)
+                    ]
+                    stone.prism(pot_base, (0, 0, pot_h), "roof_0")
+                    pot_lip = [
+                        (
+                            x + 0.118 * math.cos(k * math.tau / pot_sides),
+                            y
+                            + py_off
+                            + 0.118 * math.sin(k * math.tau / pot_sides),
+                            top + 0.04 + pot_h - 0.035,
+                        )
+                        for k in range(pot_sides)
+                    ]
+                    stone.prism(pot_lip, (0, 0, 0.048), "chimney_hole")
+                    pot_hole = [
+                        (
+                            x + 0.075 * math.cos(k * math.tau / pot_sides),
+                            y
+                            + py_off
+                            + 0.075 * math.sin(k * math.tau / pot_sides),
+                            top + 0.04 + pot_h + 0.010,
+                        )
+                        for k in range(pot_sides)
+                    ]
+                    stone.prism(pot_hole, (0, 0, 0.012), "chimney_hole")
+        else:
+            for offset in (-0.35, 0.35):
+                stone.box(
+                    (x, y + offset, top + 0.06), (0.82, 0.12, 0.12), "stone"
+                )
+            for offset in (-0.35, 0.35):
+                stone.box(
+                    (x + offset, y, top + 0.06), (0.12, 0.58, 0.12), "stone"
+                )
+            stone.box((x, y, top + 0.012), (0.54, 0.54, 0.012), "chimney_hole")
 
 
 def _root_for(collection):
@@ -979,8 +1337,11 @@ def build_house(config, *, scene=None, replace=None, location=(0, 0, 0)):
         else:
             root.location = location
         materials = _make_materials(config)
+        bevel_scale = 0.45 if config.art_style == "REALISTIC" else 1.0
         batches = {
-            name: MeshBatch(name, materials, config.bevel * factor)
+            name: MeshBatch(
+                name, materials, config.bevel * factor * bevel_scale
+            )
             for name, factor in (
                 ("Foundation", 1.5),
                 ("Walls", 0),
@@ -1035,14 +1396,30 @@ def build_house(config, *, scene=None, replace=None, location=(0, 0, 0)):
                     batches["WindowsAndDoor"], wall, opening, config
                 )
                 if opening.kind == "DOOR":
-                    centre = _wall_point(
-                        wall, (opening.x1 + opening.x2) / 2, -0.20, 0.42
-                    )
-                    batches["Foundation"].box(
-                        centre,
-                        (opening.x2 - opening.x1 + 0.55, 0.85, 0.20),
-                        "foundation",
-                    )
+                    if config.art_style == "REALISTIC":
+                        # Two-step dressed stone threshold with nosing.
+                        step_w = opening.x2 - opening.x1 + 0.58
+                        c_upper = _wall_point(
+                            wall, (opening.x1 + opening.x2) / 2, -0.15, 0.34
+                        )
+                        c_lower = _wall_point(
+                            wall, (opening.x1 + opening.x2) / 2, -0.25, 0.52
+                        )
+                        batches["Foundation"].box(
+                            c_upper, (step_w, 0.62, 0.14), "stone"
+                        )
+                        batches["Foundation"].box(
+                            c_lower, (step_w + 0.16, 0.88, 0.12), "foundation"
+                        )
+                    else:
+                        centre = _wall_point(
+                            wall, (opening.x1 + opening.x2) / 2, -0.20, 0.42
+                        )
+                        batches["Foundation"].box(
+                            centre,
+                            (opening.x2 - opening.x1 + 0.55, 0.85, 0.20),
+                            "foundation",
+                        )
             for floor in range(1, config.floors):
                 z = floor * plan.floor_height
                 _wall_box(
@@ -1075,6 +1452,13 @@ def build_house(config, *, scene=None, replace=None, location=(0, 0, 0)):
             if obj:
                 obj["house_part"] = "exterior"
                 obj["house_geometry_role"] = batch.name
+                if config.art_style == "REALISTIC" and batch.name in (
+                    "RoofTiles",
+                    "RoofTrim",
+                ):
+                    for polygon in obj.data.polygons:
+                        polygon.use_smooth = True
+                    obj.data.set_sharp_from_angle(angle=math.radians(44))
         if config.interior:
             interior_blender.build_geometry(
                 interior, plan, config, collection, root, materials, MeshBatch
@@ -1114,6 +1498,7 @@ def create_preview_stage(plan, root, *, scene=None):
     stage[OWNER_KEY] = OWNER
     stage["is_preview_stage"] = True
     scene.collection.children.link(stage)
+    realistic = art_style == "REALISTIC"
     material = bpy.data.materials.new("CH_PreviewGround")
     material[OWNER_KEY] = OWNER
     color = _linear_color("b8c9ac")
@@ -1121,8 +1506,11 @@ def create_preview_stage(plan, root, *, scene=None):
     shader = _principled_shader(material)
     shader.inputs["Base Color"].default_value = color
     shader.inputs["Roughness"].default_value = 0.9
+    if realistic:
+        configure_realistic_preview_ground(material, shader)
     ground = MeshBatch("PreviewGround", {"ground": material})
-    ground.box((0, 0, -0.12), (200, 200, 0.16), "ground")
+    ground_span = 600 if realistic else 200
+    ground.box((0, 0, -0.12), (ground_span, ground_span, 0.16), "ground")
     ground_obj = ground.finish(stage, None)
     ground_obj.location = root.matrix_world.translation
     top = max(point[2] for face in plan.roof_faces for point in face)
@@ -1131,6 +1519,9 @@ def create_preview_stage(plan, root, *, scene=None):
     camera_point = (span * 1.2, -span * 1.65, top + span * 0.65)
     ortho_scale = span * 1.85
     visible_floor = root.get("visible_interior_floor", -1)
+    if realistic and visible_floor < 0:
+        target_point = (0, 0, top * 0.44)
+        camera_point = (span * 1.48, -span * 1.98, top * 0.96 + span * 0.56)
     if visible_floor >= 0:
         floor_height = floor_z(plan, visible_floor)
         view_span = max(plan.width, plan.depth)
@@ -1150,64 +1541,84 @@ def create_preview_stage(plan, root, *, scene=None):
     camera.rotation_euler = (
         (target - camera.location).to_track_quat("-Z", "Y").to_euler()
     )
-    camera_data.type = "ORTHO"
-    camera_data.ortho_scale = ortho_scale
+    if realistic and visible_floor < 0:
+        camera_data.type = "PERSP"
+        camera_data.lens = 50.0
+    else:
+        camera_data.type = "ORTHO"
+        camera_data.ortho_scale = ortho_scale
     scene.camera = camera
-    for name, position, energy, size in (
-        ("Key", (-span * 0.7, -span, top + span), 2100, span * 0.85),
-        (
-            "Fill",
-            (span, -span * 0.25, top + span * 0.6),
-            380 if art_style == "CARTOON" else 1100,
-            span,
-        ),
-        ("Rim", (0, span, top + span * 0.8), 1800, span * 0.7),
-    ):
-        data = bpy.data.lights.new(f"CH_{name}", "AREA")
-        data.energy, data.shape, data.size = (
-            energy * (span / 6.5) ** 2,
-            "DISK",
-            size,
-        )
-        obj = bpy.data.objects.new(f"CH_{name}", data)
-        obj[OWNER_KEY] = OWNER
-        stage.objects.link(obj)
-        obj.location = root.matrix_world @ Vector(position)
-        obj.rotation_euler = (
-            (target - obj.location).to_track_quat("-Z", "Y").to_euler()
-        )
     if scene.world is None or scene.world.get(OWNER_KEY) != OWNER:
         scene.world = bpy.data.worlds.new("CH_PreviewWorld")
         scene.world[OWNER_KEY] = OWNER
     scene.world.use_nodes = True
-    nodes = scene.world.node_tree.nodes
-    background = next(
-        (node for node in nodes if node.type == "BACKGROUND"), None
-    )
-    if background is None:
-        background = nodes.new("ShaderNodeBackground")
-        output = next(
-            (node for node in nodes if node.type == "OUTPUT_WORLD"), None
+    if realistic:
+        configure_realistic_sky(
+            scene.world,
+            sun_elevation=22.0,
+            sun_rotation=232.0,
+            sun_disc=True,
+            sun_intensity=1.0,
         )
-        if output is None:
-            output = nodes.new("ShaderNodeOutputWorld")
-        scene.world.node_tree.links.new(
-            background.outputs["Background"], output.inputs["Surface"]
+        # Warm interior hearth bounce visible through leaded glass.
+        hearth_data = bpy.data.lights.new("CH_Hearth", "POINT")
+        hearth_data.energy = 120.0
+        hearth_data.color = (1.0, 0.58, 0.24)
+        hearth_data.shadow_soft_size = 0.45
+        hearth = bpy.data.objects.new("CH_Hearth", hearth_data)
+        hearth[OWNER_KEY] = OWNER
+        stage.objects.link(hearth)
+        hearth.location = root.matrix_world @ Vector(
+            (0.0, 0.0, FOUNDATION_HEIGHT + plan.floor_height * 0.55)
         )
-    background.inputs["Color"].default_value = (0.70, 0.80, 1.0, 1.0)
-    background.inputs["Strength"].default_value = 0.45
-    scene.render.engine = preview_engine(art_style)
-    scene.cycles.device = "CPU"
-    scene.cycles.samples = 32
-    scene.cycles.use_denoising = True
+        configure_realistic_cycles(scene, samples=64, exposure=0.0)
+    else:
+        for name, position, energy, size in (
+            ("Key", (-span * 0.7, -span, top + span), 2100, span * 0.85),
+            ("Fill", (span, -span * 0.25, top + span * 0.6), 380, span),
+            ("Rim", (0, span, top + span * 0.8), 1800, span * 0.7),
+        ):
+            data = bpy.data.lights.new(f"CH_{name}", "AREA")
+            data.energy, data.shape, data.size = (
+                energy * (span / 6.5) ** 2,
+                "DISK",
+                size,
+            )
+            obj = bpy.data.objects.new(f"CH_{name}", data)
+            obj[OWNER_KEY] = OWNER
+            stage.objects.link(obj)
+            obj.location = root.matrix_world @ Vector(position)
+            obj.rotation_euler = (
+                (target - obj.location).to_track_quat("-Z", "Y").to_euler()
+            )
+        nodes = scene.world.node_tree.nodes
+        background = next(
+            (node for node in nodes if node.type == "BACKGROUND"), None
+        )
+        if background is None:
+            background = nodes.new("ShaderNodeBackground")
+            output = next(
+                (node for node in nodes if node.type == "OUTPUT_WORLD"), None
+            )
+            if output is None:
+                output = nodes.new("ShaderNodeOutputWorld")
+            scene.world.node_tree.links.new(
+                background.outputs["Background"], output.inputs["Surface"]
+            )
+        background.inputs["Color"].default_value = (0.70, 0.80, 1.0, 1.0)
+        background.inputs["Strength"].default_value = 0.45
+        scene.render.engine = preview_engine(art_style)
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 32
+        scene.cycles.use_denoising = True
+        scene.view_settings.view_transform = "AgX"
+        scene.view_settings.look = "AgX - Medium High Contrast"
+        scene.view_settings.exposure = 0
+        scene.view_settings.gamma = 1
     scene.render.resolution_x = 960
     scene.render.resolution_y = 900
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-    scene.view_settings.view_transform = "AgX"
-    scene.view_settings.look = "AgX - Medium High Contrast"
-    scene.view_settings.exposure = 0
-    scene.view_settings.gamma = 1
     return stage
 
 
@@ -1343,6 +1754,16 @@ if bpy is not None:
             items=[
                 ("SIMPLE", "단순형", "간단한 외관"),
                 ("MEDIEVAL", "중세 목조", "목재 골조와 석재 기단, 굴뚝"),
+            ],
+        )
+        chimney_cap: bpy.props.EnumProperty(
+            name="굴뚝 마감",
+            default="AUTO",
+            items=[
+                ("AUTO", "자동", "시드에 따라 석재 갓·개방형·연통 중 선택"),
+                ("OPEN", "개방형", "계단형 석재 관두"),
+                ("STONE_CAP", "석재 비가림 갓", "네 돌기둥과 석재 지붕 갓"),
+                ("POTS", "테라코타 연통", "점토 굴뚝 연통"),
             ],
         )
         interior: bpy.props.BoolProperty(name="실내 구조 생성", default=True)
@@ -1570,6 +1991,7 @@ def _arguments(argv):
     parser.add_argument("--roof-style", choices=ROOF_STYLES)
     parser.add_argument("--palette", choices=PALETTES)
     parser.add_argument("--architecture", choices=ARCHITECTURES)
+    parser.add_argument("--chimney-cap", type=str.upper, choices=CHIMNEY_CAPS)
     parser.add_argument("--output", type=Path, help="Save a .blend file")
     parser.add_argument(
         "--render", type=Path, help="Render a PNG, creating a preview stage"
@@ -1672,6 +2094,13 @@ def main(argv=None):
             encoding="utf-8",
         )
     if args.stage or args.render:
+        if bpy.app.background and args.render:
+            # Hide Blender's default startup Light/Cube in CLI renders.
+            for default_name in ("Light", "Cube"):
+                if (
+                    default_obj := bpy.data.objects.get(default_name)
+                ) is not None and not default_obj.get(OWNER_KEY):
+                    default_obj.hide_render = True
         create_preview_stage(plan, root)
     if args.render:
         args.render.resolve().parent.mkdir(parents=True, exist_ok=True)

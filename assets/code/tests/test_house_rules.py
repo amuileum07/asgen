@@ -108,6 +108,7 @@ class LayoutTests(unittest.TestCase):
             {"floors": 4},
             {"variation": 1},
             {"wall_style": "unknown"},
+            {"chimney_cap": "unknown"},
             {"roof_tiles": "yes"},
         ):
             with self.subTest(values=values), self.assertRaises(ValueError):

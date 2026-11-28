@@ -11,7 +11,18 @@ from terrain_rules import (
     value_noise,
 )
 
-REGION_KINDS = ("MOUNTAIN", "HILLS", "VALLEY", "PLAIN")
+REGION_KINDS = (
+    "MOUNTAIN",
+    "MOUNTAIN_RANGE",
+    "HILLS",
+    "VALLEY",
+    "PLAIN",
+    "MARSH",
+    "DESERT",
+    "CANYON",
+)
+LAKE_KINDS = ("LAKE", "POND", "MARSH_POOL")
+RIVER_KINDS = ("RIVER", "STREAM")
 SEA_SIDES = ("WEST", "EAST", "SOUTH", "NORTH")
 
 
@@ -107,6 +118,7 @@ class Lake:
     radii: tuple
     level: float
     depth: float = 10.0
+    kind: str = "LAKE"
 
     def __post_init__(self):
         object.__setattr__(
@@ -116,16 +128,20 @@ class Lake:
             self, "radii", _coordinates(self.radii, 2, "lake radii")
         )
         _coordinates((self.level, self.depth), 2, "lake levels")
-        if min(self.radii) < 12 or self.depth <= 0:
+        if self.kind not in LAKE_KINDS:
+            raise ValueError(f"Invalid lake kind: {self.kind}")
+        min_radius = 4.0 if self.kind in ("POND", "MARSH_POOL") else 12.0
+        if min(self.radii) < min_radius or self.depth <= 0:
             raise ValueError(
-                "Lake radii must be at least 12m and depth positive"
+                f"Lake radii must be at least {min_radius:g}m "
+                "and depth positive"
             )
 
     def distance(self, x, y, seed):
         u = (x - self.centre[0]) / self.radii[0]
         v = (y - self.centre[1]) / self.radii[1]
         angle = math.atan2(v, u)
-        shore = 1 + 0.10 * value_noise(
+        shore = 1 + 0.12 * value_noise(
             math.cos(angle) * 3, math.sin(angle) * 3, seed + 751
         )
         return (math.hypot(u, v) - shore) * min(self.radii)
@@ -137,11 +153,14 @@ class River:
     points: tuple
     width: float
     depth: float = 3.0
+    kind: str = "RIVER"
 
     def __post_init__(self):
         points = tuple(_coordinates(p, 3, "river point") for p in self.points)
         object.__setattr__(self, "points", points)
         _coordinates((self.width, self.depth), 2, "river size")
+        if self.kind not in RIVER_KINDS:
+            raise ValueError(f"Invalid river kind: {self.kind}")
         if len(points) < 2 or self.width <= 0 or self.depth <= 0:
             raise ValueError("A river needs a polyline, width and depth")
         if any(
@@ -151,6 +170,26 @@ class River:
             raise ValueError(
                 "River points must be spaced apart and flow downhill"
             )
+
+
+@dataclass(frozen=True)
+class Cave:
+    id: str
+    centre: tuple
+    heading: float = 0.0
+    width: float = 4.6
+    height: float = 3.8
+    depth: float = 12.0
+
+    def __post_init__(self):
+        object.__setattr__(
+            self, "centre", _coordinates(self.centre, 2, "cave centre")
+        )
+        _coordinates(
+            (self.heading, self.width, self.height, self.depth), 4, "cave"
+        )
+        if self.width < 2.0 or self.height < 2.0 or self.depth < 4.0:
+            raise ValueError("Invalid cave dimensions")
 
 
 @dataclass(frozen=True)
@@ -282,21 +321,100 @@ class WorldTerrain:
             if distance >= 1:
                 continue
             target = region.elevation
-            if target is None and region.kind in ("MOUNTAIN", "HILLS"):
+            if target is None and region.kind in (
+                "MOUNTAIN",
+                "MOUNTAIN_RANGE",
+                "HILLS",
+            ):
                 target = region.max_elevation
             if target is None:
                 continue
             fade = smoothstep(0, 1, 1 - distance)
             if region.kind == "MOUNTAIN":
-                ridge = 1 - abs(value_noise(x / 77, y / 77, seed + 435))
-                fade **= 1.15 + 0.55 * (1 - ridge)
-                target += 22 * noise * smoothstep(0, 0.45, distance)
+                # Radiating glacial spurs and multi-octave alpine crags.
+                dx, dy = x - region.centre[0], y - region.centre[1]
+                theta = math.atan2(dy, dx)
+                warp = value_noise(x / 115, y / 115, seed + 389) * 0.68
+                spurs = 0.5 + 0.5 * math.cos(theta * 6.0 + warp * 2.8)
+                ridge1 = 1 - abs(value_noise(x / 77, y / 77, seed + 435))
+                ridge2 = 1 - abs(value_noise(x / 31, y / 31, seed + 619))
+                ridge3 = 1 - abs(value_noise(x / 15, y / 15, seed + 733))
+                crag = ridge1 * 0.52 + ridge2 * 0.32 + ridge3 * 0.16
+                sculpt = crag * 0.64 + spurs * 0.36
+                fade **= 1.24 + 0.66 * (1 - sculpt)
+                target += (
+                    22 * noise + 22 * (crag - 0.52) + 18 * (spurs - 0.5)
+                ) * smoothstep(0, 0.36, distance)
+            elif region.kind == "MOUNTAIN_RANGE":
+                # Meandering alpine spine with sharp arêtes and spurs.
+                dx, dy = x - region.centre[0], y - region.centre[1]
+                ang = math.radians(region.heading)
+                c, s = math.cos(ang), math.sin(ang)
+                along = (dx * c + dy * s) / region.radii[0]
+                across = (-dx * s + dy * c) / region.radii[1]
+                bend = value_noise(along * 1.9, 0.35, seed + 547) * 0.24
+                offset = across + bend
+                spine = 1 - smoothstep(0.0, 0.94, abs(offset))
+                ends = 1 - smoothstep(0.58, 1.0, abs(along))
+                peaks = 0.64 + 0.36 * (
+                    1 - abs(value_noise(along * 3.8, offset * 2.1, seed + 511))
+                )
+                spur = 1 - abs(
+                    value_noise(along * 6.4, offset * 2.6, seed + 613)
+                )
+                arête = 1 - abs(value_noise(x / 32, y / 32, seed + 683))
+                sculpt = arête * 0.58 + spur * 0.42
+                fade = (spine * ends) ** (0.98 + 0.62 * (1 - sculpt))
+                target = target * peaks + 18 * (sculpt - 0.48) * smoothstep(
+                    0, 0.30, distance
+                )
             elif region.kind == "HILLS":
                 fade = fade**0.72
                 target += 9 * noise * smoothstep(0, 0.4, distance)
             elif region.kind == "VALLEY":
                 fade = smoothstep(0, 1, min(1.0, (1 - distance) * 1.4))
                 target += 3 * noise
+            elif region.kind == "MARSH":
+                # Waterlogged basin with tussock micro-hummocks.
+                fade = smoothstep(0, 1, min(1.0, (1 - distance) * 1.35))
+                hummock = value_noise(x / 11, y / 11, seed + 811) * 0.65
+                target += 0.9 * noise + hummock
+            elif region.kind == "DESERT":
+                # Wind-sculpted asymmetric sand dunes on dry ergs.
+                ang = math.radians(region.heading)
+                phase = (
+                    x * math.cos(ang) + y * math.sin(ang)
+                ) / 32.0 + value_noise(x / 92, y / 92, seed + 907) * 1.45
+                dune = (
+                    math.sin(phase) * 0.72 + math.sin(phase * 2.0 - 0.7) * 0.28
+                ) * 7.8
+                target += dune + 2.2 * noise
+            elif region.kind == "CANYON":
+                # Mesa-flanked curving gorge with sandstone strata.
+                dx, dy = x - region.centre[0], y - region.centre[1]
+                ang = math.radians(region.heading)
+                c, s = math.cos(ang), math.sin(ang)
+                along = (dx * c + dy * s) / region.radii[0]
+                across = (-dx * s + dy * c) / region.radii[1]
+                meander = (
+                    math.sin(along * math.pi * 1.15) * 0.24
+                    + value_noise(along * 2.5, 0.5, seed + 971) * 0.16
+                )
+                span = abs(across + meander)
+                wall = smoothstep(0.11, 0.46, span)
+                # Quantized strata benches along the steep canyon wall.
+                strata = (
+                    wall * 5.0 - math.sin(wall * math.tau * 5.0) * 0.16
+                ) / 5.0
+                ends = 1 - smoothstep(0.70, 1.0, abs(along))
+                rim = (
+                    region.max_elevation
+                    if region.max_elevation is not None
+                    else max(height + 28.0, target + 46.0)
+                )
+                gorge = target + (rim - target) * strata
+                fade = (1 - smoothstep(0.54, 0.98, span)) * ends
+                target = gorge + 2.1 * value_noise(x / 18, y / 18, seed + 997)
             else:
                 target += 1.7 * noise
             height += (target - height) * fade
@@ -322,34 +440,36 @@ class WorldTerrain:
                     )
                 )
         for lake in self.lakes.values():
+            bank = 6.5 if lake.kind in ("POND", "MARSH_POOL") else 19.0
             distance = lake.distance(x, y, seed)
-            if distance <= 19 + reach:
+            if distance <= bank + reach:
                 result.append(
                     Water(
                         lake.id,
-                        "LAKE",
+                        lake.kind,
                         distance,
                         lake.level,
                         lake.depth,
                         min(lake.radii) * 0.60,
-                        19,
+                        bank,
                     )
                 )
         for channel in self.rivers.values():
             river = channel.river
-            match = channel.nearest(x, y, river.width / 2 + 18 + reach)
-            if match and match[0] <= 18 + reach:
+            bank = 7.5 if river.kind == "STREAM" else 18.0
+            match = channel.nearest(x, y, river.width / 2 + bank + reach)
+            if match and match[0] <= bank + reach:
                 distance, point, level = match
                 level = self.river_level(river.id, point, level)
                 result.append(
                     Water(
                         river.id,
-                        "RIVER",
+                        river.kind,
                         distance,
                         level,
                         river.depth,
                         river.width / 2,
-                        18,
+                        bank,
                     )
                 )
         return tuple(result)

@@ -10,6 +10,7 @@ WALL_STYLES = ("BRICK", "WOOD_HORIZONTAL", "WOOD_VERTICAL", "PLASTER")
 ROOF_STYLES = ("GABLE", "HIP", "SHED", "FLAT")
 PALETTES = ("WARM", "PASTEL", "COASTAL")
 ARCHITECTURES = ("SIMPLE", "MEDIEVAL")
+CHIMNEY_CAPS = ("AUTO", "OPEN", "STONE_CAP", "POTS")
 EPSILON = 1e-8
 FOUNDATION_HEIGHT = 0.30
 WALL_THICKNESS = 0.16
@@ -47,6 +48,7 @@ class HouseConfig:
     architecture: str = "MEDIEVAL"
     door_open: bool = False
     art_style: str = "CARTOON"
+    chimney_cap: str = "AUTO"
 
     def validate(self):
         validate_art_style(self.art_style)
@@ -85,6 +87,7 @@ class HouseConfig:
             ("roof_style", ROOF_STYLES),
             ("palette", PALETTES),
             ("architecture", ARCHITECTURES),
+            ("chimney_cap", CHIMNEY_CAPS),
         ):
             if getattr(self, name) not in choices:
                 raise ValueError(f"{name} must be one of {choices}")

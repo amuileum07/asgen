@@ -10,17 +10,26 @@ from house_generator import MeshBatch
 UP = Vector((0, 0, 1))
 
 
-def tree_stem(batch, points, radii, turn, sides, material="wood"):
+def tree_stem(
+    batch, points, radii, turn, sides, material="wood", *, flute=0.0
+):
     axis = (points[-1] - points[0]).normalized()
     horizontal = Vector((math.cos(turn), math.sin(turn), 0))
     u = axis.cross(horizontal).normalized()
     v = axis.cross(u)
     first = len(batch.vertices)
-    for point, radius in zip(points, radii, strict=True):
+    total = max(1, len(points) - 1)
+    for ring_idx, (point, radius) in enumerate(
+        zip(points, radii, strict=True)
+    ):
+        t = ring_idx / total
+        # Organic buttress fluting fades upward from the root collar.
+        flare = flute * max(0.0, 1.0 - t * 2.2)
         for side in range(sides):
             angle = side * math.tau / sides
+            r = radius * (1.0 + flare * math.cos(angle * 5.0 + turn))
             offset = u * math.cos(angle) + v * math.sin(angle)
-            batch.vertices.append(tuple(point + radius * offset))
+            batch.vertices.append(tuple(point + r * offset))
     last = first + (len(points) - 1) * sides
     faces = [
         tuple(range(first + sides - 1, first - 1, -1)),
@@ -41,27 +50,42 @@ def _direction(angle):
     return Vector((math.cos(angle), math.sin(angle), 0))
 
 
-def _leaf(batch, start, direction, length, width, slot):
-    """Four triangles meet at the raised midrib of a pointed blade."""
+def _leaf(batch, start, direction, length, width, slot, *, arched=True):
+    """Build an organic arched, folded blade along a raised midrib."""
     forward = direction.normalized()
-    side = UP.cross(forward).normalized()
+    side = UP.cross(forward)
+    if side.length < 1e-5:
+        side = Vector((1, 0, 0)).cross(forward)
+    side.normalize()
     normal = forward.cross(side)
-    middle = start + forward * (length * 0.44)
+    mid_base = start + forward * (length * 0.36) + normal * (width * 0.14)
+    mid_upper = start + forward * (length * 0.68) + normal * (width * 0.10)
+    tip_droop = -UP * (length * 0.14) if arched else Vector((0, 0, 0))
+    tip = start + forward * length + tip_droop
     first = len(batch.vertices)
     batch.vertices.extend(
         tuple(p)
         for p in (
             start,
-            middle - side * width,
-            start + forward * length,
-            middle + side * width,
-            middle + normal * (width * 0.33),
+            mid_base - side * (width * 0.95) - normal * (width * 0.12),
+            mid_upper - side * (width * 0.68) - normal * (width * 0.16),
+            tip,
+            mid_upper + side * (width * 0.68) - normal * (width * 0.16),
+            mid_base + side * (width * 0.95) - normal * (width * 0.12),
+            mid_base + normal * (width * 0.24),
         )
     )
     batch.faces.extend(
-        (first + i, first + (i + 1) % 4, first + 4) for i in range(4)
+        (
+            (first + 0, first + 1, first + 6),
+            (first + 1, first + 2, first + 6),
+            (first + 2, first + 3, first + 6),
+            (first + 3, first + 4, first + 6),
+            (first + 4, first + 5, first + 6),
+            (first + 5, first + 0, first + 6),
+        )
     )
-    batch.face_materials.extend([slot] * 4)
+    batch.face_materials.extend([slot] * 6)
 
 
 def _spray(leaves, twigs, start, end, angle, rng, pine, slots, compact):
@@ -70,42 +94,51 @@ def _spray(leaves, twigs, start, end, angle, rng, pine, slots, compact):
     side = UP.cross(direction).normalized()
     radius = 0.011 if pine else 0.014
     tree_stem(twigs, (start, end), (radius, 0.003), angle, 4, "bark")
-    pairs = 3 if compact else (8 if pine else 6)
+    pairs = 3 if compact else (9 if pine else 7)
     for i in range(pairs):
-        t = (i + 0.35) / pairs
+        t = (i + 0.32) / pairs
         node = start + along * t
         for sign in (-1, 1):
             aim = direction * (0.32 + 0.5 * t) + side * sign
-            aim.z += rng.uniform(-0.48, 0.38)
+            aim.z += rng.uniform(-0.48, 0.40)
             # A conifer spray narrows towards its growing tip.
-            length = (0.24 - 0.15 * t) if pine else rng.uniform(0.17, 0.31)
+            length = (0.24 - 0.15 * t) if pine else rng.uniform(0.16, 0.29)
             if compact:
                 length *= 1.35
-            width = length * (0.12 if pine else rng.uniform(0.25, 0.37))
-            _leaf(leaves, node, aim, length, width, rng.choice(slots))
+            width = length * (0.12 if pine else rng.uniform(0.24, 0.36))
+            _leaf(
+                leaves,
+                node,
+                aim,
+                length,
+                width,
+                rng.choice(slots),
+                arched=not pine,
+            )
 
 
 def _broadleaf(leaves, trunk, limbs, rng, slots, compact):
-    lean = _direction(rng.random() * math.tau) * rng.uniform(0.12, 0.36)
+    lean = _direction(rng.random() * math.tau) * rng.uniform(0.14, 0.38)
 
     def stem(z):
-        return UP * z + lean * (z / 4) ** 1.6
+        return UP * z + lean * max(0.0, z / 4) ** 1.6
 
     tree_stem(
         trunk,
-        [stem(z) for z in (0, 0.22, 1.2, 2.2, 3.1, 3.9)],
-        (0.225, 0.155, 0.122, 0.095, 0.057, 0.019),
+        [stem(z) for z in (-0.08, 0.22, 1.2, 2.2, 3.1, 3.9)],
+        (0.245, 0.162, 0.124, 0.095, 0.057, 0.019),
         0.7,
-        11,
+        12,
         "bark",
+        flute=0.14,
     )
-    for i in range(5):
-        yaw = i * math.tau / 5 + rng.uniform(-0.24, 0.24)
+    for i in range(6):
+        yaw = i * math.tau / 6 + rng.uniform(-0.24, 0.24)
         out = _direction(yaw)
         tree_stem(
             trunk,
-            (UP * 0.28, out * 0.22 + UP * 0.06, out * 0.43 - UP * 0.09),
-            (0.12, 0.075, 0.026),
+            (UP * 0.32, out * 0.24 + UP * 0.07, out * 0.48 - UP * 0.10),
+            (0.125, 0.078, 0.024),
             yaw + 1.5,
             7,
             "bark",
@@ -154,17 +187,29 @@ def _conifer(leaves, trunk, limbs, rng, slots, compact):
     lean = _direction(rng.random() * math.tau) * 0.12
 
     def stem(z):
-        return UP * z + lean * (z / 5) ** 2
+        return UP * z + lean * max(0.0, z / 5) ** 2
 
     levels = (-0.12, 0.22, 1.4, 2.8, 4.1, 5.0)
     tree_stem(
         trunk,
         [stem(z) for z in levels],
-        (0.18, 0.126, 0.102, 0.078, 0.041, 0.007),
+        (0.195, 0.132, 0.104, 0.078, 0.041, 0.007),
         0,
-        10,
+        12,
         "bark",
+        flute=0.11,
     )
+    for i in range(5):
+        yaw = i * math.tau / 5 + rng.uniform(-0.26, 0.26)
+        out = _direction(yaw)
+        tree_stem(
+            trunk,
+            (UP * 0.20, out * 0.20 + UP * 0.03, out * 0.38 - UP * 0.12),
+            (0.095, 0.056, 0.020),
+            yaw + 1.5,
+            6,
+            "bark",
+        )
     tiers = 8 if compact else 11
     for row in range(tiers):
         t = row / (tiers - 1)

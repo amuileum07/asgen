@@ -17,7 +17,7 @@ from settlement_rules import (
 )
 from terrain_rules import TerrainSampler, smoothstep, value_noise
 from transport_rules import resample
-from world_terrain import Coast, Grid, Lake, Region, River, WorldTerrain
+from world_terrain import Cave, Coast, Grid, Lake, Region, River, WorldTerrain
 
 FEATURES = {
     "HARBOR": "QUAY",
@@ -50,6 +50,7 @@ class WorldConfig:
     coast: Coast | None = None
     lakes: tuple = ()
     rivers: tuple = ()
+    caves: tuple = ()
     settlements: tuple = ()
     art_style: str = "CARTOON"
 
@@ -61,6 +62,7 @@ class WorldConfig:
             ("regions", Region),
             ("lakes", Lake),
             ("rivers", River),
+            ("caves", Cave),
         ):
             values[key] = tuple(kind(**item) for item in values.get(key, ()))
         if values.get("coast") is not None:
@@ -113,15 +115,18 @@ class WorldConfig:
                 "Use at most 12 settlements and 24 terrain regions"
             )
         bodies = (*self.lakes, *self.rivers)
-        if len(bodies) > 16:
-            raise ValueError("Use at most 16 lakes and rivers")
+        if len(bodies) > 24:
+            raise ValueError("Use at most 24 lakes, ponds, rivers and streams")
         _validate_ids([b.id for b in bodies], reserved=("sea",))
+        _validate_ids([c.id for c in self.caves])
         _validate_ids([site.id for site in self.settlements])
         for lake in self.lakes:
-            if min(lake.radii) < self.terrain_step * 1.5:
+            factor = 0.5 if lake.kind in ("POND", "MARSH_POOL") else 1.5
+            if min(lake.radii) < self.terrain_step * factor:
                 raise ValueError(f"Reduce terrain_step around lake {lake.id}")
         for river in self.rivers:
-            if river.width < self.terrain_step * 2.5:
+            factor = 0.5 if river.kind == "STREAM" else 2.5
+            if river.width < self.terrain_step * factor:
                 raise ValueError(
                     f"Reduce terrain_step or widen river {river.id}"
                 )
